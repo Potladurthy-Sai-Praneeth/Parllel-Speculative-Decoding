@@ -81,7 +81,8 @@ class Decoding(ABC):
             for idx,value in self.all_draft_models.items():
                 self.all_kv_cache_models[idx] = KVCache2Model(value, self.args.temp, self.args.top_k, self.args.top_p)
                 self.all_kv_cache_models[idx].vocab_size = self.vocab_size
-            device = self.all_kv_cache_models[0].device
+                d = value.device
+            device = d
 
         else:
             model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
