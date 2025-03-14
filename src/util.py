@@ -45,8 +45,12 @@ def model_zoo(args):
         "phi-1.5":"microsoft/phi-1_5"
     }
 
-    args.vocab_size = vocab_size[args.draft_model]
-    args.draft_model = zoo[args.draft_model]
+    args.vocab_size = vocab_size[args.draft_model_1]
+    args.draft_model_1 = zoo[args.draft_model_1]
+    if args.draft_model_2 is not None:
+        args.draft_model_2 = zoo[args.draft_model_2]
+    if args.draft_model_3 is not None:
+        args.draft_model_3 = zoo[args.draft_model_3]
     args.target_model = zoo[args.target_model]
 
 def parse_arguments():
