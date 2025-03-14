@@ -161,7 +161,7 @@ class EvalGSM8K(Decoding):
             for line in f.readlines():
                 datum = json.loads(line)
                 datum["input_text"] = self.preprocess(datum["question"])
-                encode_special_token_flag = not ("Llama-3.1" in self.args.draft_model and "Llama-3.1" in self.args.target_model)
+                encode_special_token_flag = not ("Llama-3.1" in self.args.draft_model_1 and "Llama-3.1" in self.args.target_model)
                 input_ids = self.tokenizer.encode(datum["input_text"], add_special_tokens=encode_special_token_flag)
                 datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
                 datum["ground_truth"] = self.extract_answer_from_output(datum["answer"])

@@ -34,7 +34,7 @@ class Decoding(ABC):
     
     def load_model(self):
         # * load models according to different evaluation methods.
-        self.color_print(f"Loading models:\n{self.args.draft_model}\n{self.args.target_model}", 3)
+        self.color_print(f"Loading models:\n{self.args.draft_model_1}\n{self.args.target_model}", 3)
 
         if self.args.eval_mode == "para_sd":
             if self.accelerator.is_main_process:
@@ -55,8 +55,8 @@ class Decoding(ABC):
 
     def load_tokenizer(self):
         # * load tokenizers
-        self.color_print(f"Loading tokenizer of {self.args.draft_model}...", 3)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.args.draft_model, trust_remote_code=True)
+        self.color_print(f"Loading tokenizer of {self.args.draft_model_1}...", 3)
+        self.tokenizer = AutoTokenizer.from_pretrained(self.args.draft_model_1, trust_remote_code=True)
         self.tokenizer.padding_side = "right"
 
 
