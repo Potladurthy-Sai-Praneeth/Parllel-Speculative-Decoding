@@ -7,7 +7,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from abc import ABC, abstractmethod
 from accelerate import Accelerator
 from .kvcache import KVCacheModel
-from .kvcache4RC import KVCacheModel as KVCache2Model
+# from .kvcache4RC import KVCacheModel as KVCache2Model
 from .util import seed_everything, norm_logits, sample, max_fn
 import time
 
@@ -79,7 +79,7 @@ class Decoding(ABC):
         # parallel speculative decoding
         if self.accelerator.is_main_process:
             for idx,value in self.all_draft_models.items():
-                self.all_kv_cache_models[idx] = KVCache2Model(value, self.args.temp, self.args.top_k, self.args.top_p)
+                self.all_kv_cache_models[idx] = KVCacheModel(value, self.args.temp, self.args.top_k, self.args.top_p)
                 self.all_kv_cache_models[idx].vocab_size = self.vocab_size
                 d = value.device
             device = d
