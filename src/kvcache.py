@@ -20,7 +20,12 @@ class KVCacheModel():
             self._prob_history = outputs.logits[:, :, :self.vocab_size]
             for i in range(self._prob_history.shape[-2]):   
                 self._prob_history[:, i, :] = norm_logits(self._prob_history[:, i, :], self._temperature, self._top_k, self._top_p)
-            self._past_key_values = outputs.past_key_values
+            
+            if isinstance(outputs.past_key_values, tuple):
+                self._past_key_values = outputs.past_key_values[0]
+            else:
+                self._past_key_values = outputs.past_key_values
+
             last_q = self._prob_history[:, -1, :]
         else:
             # return the last token's logits
@@ -43,7 +48,11 @@ class KVCacheModel():
             self._prob_history = torch.cat([self._prob_history, not_cached_q], dim=1)
             
             last_q = not_cached_q[:, -1, :]
-            self._past_key_values = outputs.past_key_values
+            # self._past_key_values = outputs.past_key_values
+            if isinstance(outputs.past_key_values, tuple):
+                self._past_key_values = outputs.past_key_values[0]
+            else:
+                self._past_key_values = outputs.past_key_values
         
         return last_q
 
