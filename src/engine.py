@@ -27,6 +27,8 @@ class Decoding(ABC):
         self.num_acc_tokens = []
 
         self.all_draft_models = []
+        
+        self.vocab_size = self.args.vocab_size
     
     def load_model(self):
         # * load models according to different evaluation methods.
@@ -39,7 +41,7 @@ class Decoding(ABC):
             else:
                 self.target_model = AutoModelForCausalLM.from_pretrained(self.args.target_model, device_map="auto", torch_dtype=torch.bfloat16, trust_remote_code=True).eval()
         
-        self.vocab_size = self.args.vocab_size
+        
 
     def load_tokenizer(self):
         # * load tokenizers
