@@ -21,16 +21,20 @@ class KVCacheModel():
             for i in range(self._prob_history.shape[-2]):   
                 self._prob_history[:, i, :] = norm_logits(self._prob_history[:, i, :], self._temperature, self._top_k, self._top_p)
             
-            if isinstance(outputs.past_key_values, tuple):
-                self._past_key_values = outputs.past_key_values[0]
-            else:
-                self._past_key_values = outputs.past_key_values
+            # if isinstance(outputs.past_key_values, tuple):
+            #     self._past_key_values = outputs.past_key_values[0]
+            # else:
+            self._past_key_values = outputs.past_key_values
+
+            print(self._past_key_values)
 
             last_q = self._prob_history[:, -1, :]
         else:
             # return the last token's logits
-            if isinstance(self._past_key_values, tuple):
-                self._past_key_values = self._past_key_values[0]
+            # if isinstance(self._past_key_values, tuple):
+                # self._past_key_values = self._past_key_values[0]
+            
+            print(self._past_key_values)
 
             cached_len = self._past_key_values.get_seq_length()
                 
@@ -52,10 +56,10 @@ class KVCacheModel():
             
             last_q = not_cached_q[:, -1, :]
             # self._past_key_values = outputs.past_key_values
-            if isinstance(outputs.past_key_values, tuple):
-                self._past_key_values = outputs.past_key_values[0]
-            else:
-                self._past_key_values = outputs.past_key_values
+            # if isinstance(outputs.past_key_values, tuple):
+            #     self._past_key_values = outputs.past_key_values[0]
+            # else:
+            self._past_key_values = outputs.past_key_values
         
         return last_q
 
