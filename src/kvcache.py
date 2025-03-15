@@ -29,6 +29,9 @@ class KVCacheModel():
             last_q = self._prob_history[:, -1, :]
         else:
             # return the last token's logits
+            if isinstance(self._past_key_values, tuple):
+                self._past_key_values = self._past_key_values[0]
+
             cached_len = self._past_key_values.get_seq_length()
                 
             last_input_id = input_ids[:, cached_len:]
