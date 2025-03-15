@@ -70,10 +70,10 @@ def parse_arguments():
     parser.add_argument('--batch_size', type=int, default=1, help='batch size for generating samples.')
 
     args = parser.parse_args()
-    assert args.num_samples_per_task == len(args.draft_models), f"num_samples_per_task should be equal to the length of draft_models, but got {args.num_samples_per_task} and {len(args.draft_models)}"
     args.exp_name = os.path.join(os.getcwd(), "exp", args.exp_name)
     os.makedirs(args.exp_name, exist_ok=True)
     model_zoo(args)
+    assert args.num_samples_per_task == len(args.draft_models), f"num_samples_per_task should be equal to the length of draft_models, but got {args.num_samples_per_task} and {len(args.draft_models)}"
     return args
 
 def top_k_top_p_filter(logits: torch.Tensor, top_k: int = 0, top_p: float = 0.0):
