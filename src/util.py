@@ -23,8 +23,8 @@ def model_zoo(args):
         "codegen-350m-mono": 51200,
         
         "qwen-1.5b": 151936,
-        "qwen-0.5b":151936,
-        "qwen-0.5b-quantized":151936,
+        "qwen-0.5b-coder":151936,
+        "qwen-0.5b-instruct":151936,
 
         "phi-1.5": 51200,
         "phi-2": 51200,
