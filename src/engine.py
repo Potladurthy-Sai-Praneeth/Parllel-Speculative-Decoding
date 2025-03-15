@@ -2,6 +2,8 @@ import torch
 import transformers
 import warnings
 transformers.utils.logging.set_verbosity(40)
+torch.backends.cuda.enable_flash_sdp(False)
+torch.backends.cuda.enable_mem_efficient_sdp(False)
 warnings.filterwarnings("ignore")
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from abc import ABC, abstractmethod
