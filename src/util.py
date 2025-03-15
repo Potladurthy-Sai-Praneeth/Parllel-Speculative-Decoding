@@ -46,8 +46,8 @@ def model_zoo(args):
     }
 
     args.draft_models =  [ zoo[draft_model] for draft_model in args.drafts]
-    args.target_model = zoo[args.target_model]
-    args.vocab_size = vocab_size[args.target_model]
+    args.vocab_size = vocab_size[args.target]
+    args.target_model = zoo[args.target]
 
 def parse_arguments():
     """Specified arguments for running scripts."""
@@ -56,7 +56,7 @@ def parse_arguments():
     parser.add_argument('--data_path', type=str, default="./../data/humaneval.jsonl", help='path to the dataset')
 
     parser.add_argument('--drafts',  type=str, nargs='+',  default=["codegen-350m-mono","codegen-350m-multi"], help='draft models for generating the first draft.')
-    parser.add_argument('--target_model', type=str, default="codegen-2b", help='target model for generating the final code.')
+    parser.add_argument('--target', type=str, default="codegen-2b", help='target model for generating the final code.')
     
     parser.add_argument('--exp_name', '-e', type=str, default="test", help='folder name for storing results.')
     parser.add_argument('--eval_mode', type=str, default="para_sd", help='eval mode.')
