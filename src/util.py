@@ -37,8 +37,8 @@ def model_zoo(args):
         "codegen-350m-mono": 'Salesforce/codegen-350M-mono',
 
         "qwen-1.5b": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
-        "qwen-0.5b": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
-        "qwen-0.5b-quantized":'Qwen/Qwen2.5-Coder-0.5B-Instruct-AWQ',
+        "qwen-0.5b-coder": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
+        "qwen-0.5b-instruct":'Qwen/Qwen2.5-0.5B-Instruct',
         
         "phi-2":"microsoft/phi-2",
         "phi-1":"microsoft/phi-1",
