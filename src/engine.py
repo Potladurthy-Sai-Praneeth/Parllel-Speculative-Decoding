@@ -61,7 +61,7 @@ class Decoding(ABC):
         pass
 
     @torch.no_grad()
-    def parallel_speculative_decoding_RC(self, prefix):
+    def parallel_speculative_decoding(self, prefix):
         # parallel speculative decoding
         if self.accelerator.is_main_process:
             model = KVCache2Model(self.all_draft_models, self.args.temp, self.args.top_k, self.args.top_p)
