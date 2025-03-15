@@ -11,12 +11,7 @@ class KVCacheModel():
         self._temperature = temperature
         self._top_k = top_k
         self._top_p = top_p
-
-    @property
-    def vocab_size(self):
-        # Assuming all models have the same vocab size
-        return self._model.vocab_size
-    
+        
     def _forward_with_kvcache(self, input_ids : torch.Tensor) -> torch.Tensor:
         if self._past_key_values is None:
             outputs = self._model(input_ids)
