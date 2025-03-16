@@ -36,7 +36,6 @@ def model_zoo(args):
 
         "smo-1.7b": 49152,
         'smo-360m-instruct': 49152,
-        "smo-135m": 49152,
         'smo-360m': 49152,
     }
     
@@ -57,7 +56,6 @@ def model_zoo(args):
 
         "smo-1.7b":"HuggingFaceTB/SmolLM-1.7B-Instruct",
         'smo-360m-instruct':"HuggingFaceTB/SmolLM-360M-Instruct",
-        "smo-135m":"HuggingFaceTB/SmolLM-135M-Instruct",
         'smo-360m':"HuggingFaceTB/SmolLM-360M",
     }
 
