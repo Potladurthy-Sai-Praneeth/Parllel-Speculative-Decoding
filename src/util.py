@@ -23,6 +23,7 @@ def model_zoo(args):
         "codegen-2b": 51200,
         "codegen-350m-multi": 51200,
         "codegen-350m-mono": 51200,
+        "codegen-350-nl": 51200,
         
         "qwen-1.5b": 151936,
         "qwen-0.5b-coder":151936,
@@ -32,21 +33,33 @@ def model_zoo(args):
         "phi-1.5": 51200,
         "phi-2": 51200,
         "phi-1": 51200,
+
+        "smo-1.7b-instuct": 49152,
+        'smo-360m-instruct': 49152,
+        "smo-135m": 49152,
+        'smo-360m': 49152,
     }
     
     zoo = {
         "codegen-2b": 'Salesforce/codegen-2B-multi',
         "codegen-350m-multi": 'Salesforce/codegen-350M-multi',
         "codegen-350m-mono": 'Salesforce/codegen-350M-mono',
+        "codegen-350-nl":"Salesforce/codegen-350M-nl",
 
         "qwen-1.5b": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
         "qwen-0.5b-instruct": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
         "qwen-0.5b-coder":'Qwen/Qwen2.5-Coder-0.5B',
         "qwen-0.5b": "Qwen/Qwen2.5-0.5B",
         
+        "phi-3":"microsoft/Phi-3-mini-4k-instruct",
         "phi-2":"microsoft/phi-2",
         "phi-1":"microsoft/phi-1",
-        "phi-1.5":"microsoft/phi-1_5"
+        "phi-1.5":"microsoft/phi-1_5",
+
+        "smo-1.7b-instuct":"HuggingFaceTB/SmolLM-1.7B-Instruct",
+        'smo-360m-instruct':"HuggingFaceTB/SmolLM-360M-Instruct",
+        "smo-135m":"HuggingFaceTB/SmolLM-135M-Instruct",
+        'smo-360m':"HuggingFaceTB/SmolLM-360M",
     }
 
     args.draft_models =  [ zoo[draft_model] for draft_model in args.drafts]
