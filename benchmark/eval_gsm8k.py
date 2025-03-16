@@ -9,6 +9,8 @@ import time
 import random
 from src.util import seed_everything, parse_arguments
 from src.engine import Decoding
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 
 class EvalGSM8K(Decoding):
     def __init__(self, args):

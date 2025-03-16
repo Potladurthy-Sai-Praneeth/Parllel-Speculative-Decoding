@@ -10,7 +10,8 @@ from .kvcache import KVCacheModel
 from .kvcache4RC import KVCacheModel as KVCache2Model
 from .util import seed_everything, norm_logits, sample, max_fn
 import time
-
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 
 class Decoding(ABC):
     def __init__(self, args):
@@ -27,7 +28,7 @@ class Decoding(ABC):
         self.num_acc_tokens = []
 
         self.all_draft_models = []
-        
+
         self.vocab_size = self.args.vocab_size
     
     def load_model(self):

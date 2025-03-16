@@ -4,6 +4,8 @@ import argparse
 import torch
 import torch.nn.functional as F
 import numpy as np
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 
 def seed_everything(seed: int):
     "set all random seed for reproducible results."

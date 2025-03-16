@@ -79,7 +79,8 @@
 
 import torch
 from .util import norm_logits, sample
-
+torch.backends.cuda.enable_mem_efficient_sdp(False)
+torch.backends.cuda.enable_flash_sdp(False)
 
 class KVCacheModel():
     def __init__(self, model : torch.nn.Module, temperature : float = 1, top_k : int = 0, top_p : float = 0) -> None:
