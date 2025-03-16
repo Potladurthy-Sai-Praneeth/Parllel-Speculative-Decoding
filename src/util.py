@@ -27,7 +27,7 @@ def model_zoo(args):
         "qwen-1.5b": 151936,
         "qwen-0.5b-coder":151936,
         "qwen-0.5b-instruct":151936,
-        "qwen-3b":151936,
+        "qwen-0.5b":151936,
 
         "phi-1.5": 51200,
         "phi-2": 51200,
@@ -42,7 +42,7 @@ def model_zoo(args):
         "qwen-1.5b": "Qwen/Qwen2.5-Coder-1.5B-Instruct",
         "qwen-0.5b-instruct": "Qwen/Qwen2.5-Coder-0.5B-Instruct",
         "qwen-0.5b-coder":'Qwen/Qwen2.5-Coder-0.5B',
-        "qwen-3b": "Qwen/Qwen2.5-Coder-3B-Instruct",
+        "qwen-0.5b": "Qwen/Qwen2.5-0.5B",
         
         "phi-2":"microsoft/phi-2",
         "phi-1":"microsoft/phi-1",
