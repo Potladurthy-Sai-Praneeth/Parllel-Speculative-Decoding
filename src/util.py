@@ -34,7 +34,7 @@ def model_zoo(args):
         "phi-2": 51200,
         "phi-1": 51200,
 
-        "smo-1.7b-instruct": 49152,
+        "smo-1.7b": 49152,
         'smo-360m-instruct': 49152,
         "smo-135m": 49152,
         'smo-360m': 49152,
@@ -55,7 +55,7 @@ def model_zoo(args):
         "phi-1":"microsoft/phi-1",
         "phi-1.5":"microsoft/phi-1_5",
 
-        "smo-1.7b-instuct":"HuggingFaceTB/SmolLM-1.7B-Instruct",
+        "smo-1.7b":"HuggingFaceTB/SmolLM-1.7B-Instruct",
         'smo-360m-instruct':"HuggingFaceTB/SmolLM-360M-Instruct",
         "smo-135m":"HuggingFaceTB/SmolLM-135M-Instruct",
         'smo-360m':"HuggingFaceTB/SmolLM-360M",
