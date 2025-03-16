@@ -168,7 +168,7 @@ class EvalGSM8K(Decoding):
                 datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
                 datum["ground_truth"] = self.extract_answer_from_output(datum["answer"])
                 data.append(datum)
-        self.data = data[:100]
+        self.data = data[:200]
 
         # random.shuffle(self.data)
         self.data = self.data

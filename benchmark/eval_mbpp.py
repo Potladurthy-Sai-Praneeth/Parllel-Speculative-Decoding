@@ -29,7 +29,6 @@ class EvalMBPP(Decoding):
         # * load evaluation data
         self.color_print(f"Loading MBPP data...", 3)
         data = []
-        max_count = 200
         with open(os.path.join(self.args.data_path)) as f:
             for line in f.readlines():
                 datum = json.loads(line)
@@ -38,10 +37,7 @@ class EvalMBPP(Decoding):
                 input_ids = self.tokenizer.encode(datum["input_text"], add_special_tokens=encode_special_token_flag)
                 datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
                 data.append(datum)
-                max_count -= 1
-                if max_count == 0:
-                    break
-        self.data = data
+        self.data = data[:200]
 
     def preprocess(self, input_text):
         text = input_text.strip()
