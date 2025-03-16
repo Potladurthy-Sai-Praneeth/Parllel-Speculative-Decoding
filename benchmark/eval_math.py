@@ -58,11 +58,11 @@ class EvalMath500(Decoding):
 
     def clean_answer(self, answer_str):
         """Clean the answer string by removing unnecessary spaces and symbols."""
-        # Remove spaces around common math operators
-        answer_str = re.sub(r'\s*\\frac\s*', '\\frac', answer_str)
-        answer_str = re.sub(r'\s*\\pi\s*', '\\pi', answer_str)
-        answer_str = re.sub(r'\s*\\left\s*', '\\left', answer_str)
-        answer_str = re.sub(r'\s*\\right\s*', '\\right', answer_str)
+        # Fix: Replace backslash escapes properly in replacement strings
+        answer_str = re.sub(r'\s*\\frac\s*', r'\\frac', answer_str)
+        answer_str = re.sub(r'\s*\\pi\s*', r'\\pi', answer_str)
+        answer_str = re.sub(r'\s*\\left\s*', r'\\left', answer_str)
+        answer_str = re.sub(r'\s*\\right\s*', r'\\right', answer_str)
         
         # Remove trailing periods and unnecessary spaces
         answer_str = answer_str.strip().rstrip('.')
@@ -92,16 +92,25 @@ class EvalMath500(Decoding):
         """Load the math500 dataset."""
         self.color_print(f"Loading Math500 data...", 3)
         data = []
-        with open(os.path.join(self.args.data_path)) as f:
-            for line in f.readlines():
-                datum = json.loads(line)
-                datum["input_text"] = self.preprocess(datum["problem"])
-                encode_special_token_flag = not ("Llama-3.1" in self.args.drafts and "Llama-3.1" in self.args.target)
-                input_ids = self.tokenizer.encode(datum["input_text"], add_special_tokens=encode_special_token_flag)
-                datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
-                datum["ground_truth"] = self.clean_answer(datum["answer"])
-                data.append(datum)
-        self.data = data[:200]
+        try:
+            with open(os.path.join(self.args.data_path)) as f:
+                for line in f.readlines():
+                    try:
+                        datum = json.loads(line)
+                        datum["input_text"] = self.preprocess(datum["problem"])
+                        encode_special_token_flag = not ("Llama-3.1" in self.args.drafts and "Llama-3.1" in self.args.target)
+                        input_ids = self.tokenizer.encode(datum["input_text"], add_special_tokens=encode_special_token_flag)
+                        datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
+                        datum["ground_truth"] = self.clean_answer(datum["answer"])
+                        data.append(datum)
+                    except Exception as e:
+                        self.color_print(f"Error processing datum: {e}", 1)
+                        continue
+        except Exception as e:
+            self.color_print(f"Error loading data: {e}", 1)
+        
+        self.data = data
+        self.color_print(f"Loaded {len(self.data)} examples", 2)
 
     def preprocess(self, problem_text):
         """Preprocess the problem text by adding the prompt and instruction."""
@@ -115,7 +124,11 @@ class EvalMath500(Decoding):
         else:
             generation = output_text[len(input_text):]
         
-        return self.extract_answer(generation)
+        try:
+            return self.extract_answer(generation)
+        except Exception as e:
+            self.color_print(f"Error extracting answer: {e}", 1)
+            return "ERROR_EXTRACTING_ANSWER"
              
     @torch.no_grad()
     def eval(self):
@@ -149,25 +162,32 @@ class EvalMath500(Decoding):
                     wall_times["time"].append(end_time-start_time)
                     wall_times["num_tokens"].append(generate_ids.shape[1] - input_ids.shape[1])
                 
-                predicted_answer = self.postprocess(datum["input_text"], self.tokenizer.decode(generate_ids[0, :]))
-                ground_truth = datum["ground_truth"]
-                
-                # Check if answers match (this is a simple exact match - might need more sophisticated comparison for math)
-                is_correct = (predicted_answer == ground_truth)
-                if is_correct:
-                    acc += 1
-                
-                out_f.write(json.dumps({
-                    "problem": datum["problem"],
-                    "time": end_time-start_time,
-                    "new_tokens": generate_ids.shape[1] - input_ids.shape[1],
-                    "ground_truth": ground_truth,
-                    "predicted_answer": predicted_answer,
-                    "correct": is_correct,
-                    "subject": datum.get("subject", ""),
-                    "level": datum.get("level", ""),
-                    "unique_id": datum.get("unique_id", "")
-                }, ensure_ascii=False) + "\n")
+                try:
+                    predicted_answer = self.postprocess(datum["input_text"], self.tokenizer.decode(generate_ids[0, :]))
+                    ground_truth = datum["ground_truth"]
+                    
+                    # Check if answers match (this is a simple exact match - might need more sophisticated comparison for math)
+                    is_correct = (predicted_answer.lower() == ground_truth.lower())
+                    if is_correct:
+                        acc += 1
+                    
+                    out_f.write(json.dumps({
+                        "problem": datum["problem"],
+                        "time": end_time-start_time,
+                        "new_tokens": generate_ids.shape[1] - input_ids.shape[1],
+                        "ground_truth": ground_truth,
+                        "predicted_answer": predicted_answer,
+                        "correct": is_correct,
+                        "subject": datum.get("subject", ""),
+                        "level": datum.get("level", ""),
+                        "unique_id": datum.get("unique_id", "")
+                    }, ensure_ascii=False) + "\n")
+                except Exception as e:
+                    self.color_print(f"Error in evaluation: {e}", 1)
+                    out_f.write(json.dumps({
+                        "problem": datum.get("problem", ""),
+                        "error": str(e)
+                    }, ensure_ascii=False) + "\n")
             
             out_f.flush()
         
@@ -186,7 +206,7 @@ class EvalMath500(Decoding):
         
         self.accelerator.wait_for_everyone()
         
-        if self.accelerator.is_main_process:
+        if self.accelerator.is_main_process and wall_times["time"]:
             speed = sum(wall_times["num_tokens"]) / sum(wall_times["time"])
             speed_std = (torch.tensor(wall_times["num_tokens"]) / torch.tensor(wall_times["time"])).std().item()
             self.color_print(f"generate speed (tokens / second): {speed:.2f} with std {speed_std}", 2)
