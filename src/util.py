@@ -34,7 +34,7 @@ def model_zoo(args):
         "phi-2": 51200,
         "phi-1": 51200,
 
-        "smo-1.7b-instuct": 49152,
+        "smo-1.7b-instruct": 49152,
         'smo-360m-instruct': 49152,
         "smo-135m": 49152,
         'smo-360m': 49152,
@@ -51,7 +51,6 @@ def model_zoo(args):
         "qwen-0.5b-coder":'Qwen/Qwen2.5-Coder-0.5B',
         "qwen-0.5b": "Qwen/Qwen2.5-0.5B",
         
-        "phi-3":"microsoft/Phi-3-mini-4k-instruct",
         "phi-2":"microsoft/phi-2",
         "phi-1":"microsoft/phi-1",
         "phi-1.5":"microsoft/phi-1_5",
