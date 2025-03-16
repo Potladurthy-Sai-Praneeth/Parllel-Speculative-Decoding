@@ -45,7 +45,7 @@ class EvalHumaneval(Decoding):
         return text
 
     def postprocess(self, input_text, output_text):
-        if output_text.startswith(self.tokenizer.bos_token):
+        if self.tokenizer.bos_token is not None and output_text.startswith(self.tokenizer.bos_token):
             generation = output_text[len(input_text)+len(self.tokenizer.bos_token)+1:] # tokenizer will add a '<s> ' at the beginning of the text.
         else:
             generation = output_text[len(input_text):]
