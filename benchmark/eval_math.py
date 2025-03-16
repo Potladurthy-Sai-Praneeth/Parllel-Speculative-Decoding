@@ -109,7 +109,7 @@ class EvalMath500(Decoding):
         except Exception as e:
             self.color_print(f"Error loading data: {e}", 1)
         
-        self.data = data
+        self.data = data[:200]
         self.color_print(f"Loaded {len(self.data)} examples", 2)
 
     def preprocess(self, problem_text):
