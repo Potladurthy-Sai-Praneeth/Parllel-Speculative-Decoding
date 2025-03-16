@@ -163,7 +163,7 @@ class EvalGSM8K(Decoding):
             for line in f.readlines():
                 datum = json.loads(line)
                 datum["input_text"] = self.preprocess(datum["question"])
-                encode_special_token_flag = not ("Llama-3.1" in self.args.draft_model and "Llama-3.1" in self.args.target_model)
+                encode_special_token_flag = not ("Llama-3.1" in self.args.drafts and "Llama-3.1" in self.args.target)
                 input_ids = self.tokenizer.encode(datum["input_text"], add_special_tokens=encode_special_token_flag)
                 datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
                 datum["ground_truth"] = self.extract_answer_from_output(datum["answer"])
@@ -178,7 +178,10 @@ class EvalGSM8K(Decoding):
         return text
 
     def postprocess(self, input_text, output_text):
-        generation = output_text[len(input_text)+len(self.tokenizer.bos_token)+1:] # tokenizer will add a '<s> ' at the beginning of the text.
+        if self.tokenizer.bos_token is not None:
+            generation = output_text[len(input_text)+len(self.tokenizer.bos_token)+1:] # tokenizer will add a '<s> ' at the beginning of the text.
+        else:
+            generation = output_text[len(input_text)+1:]
         generation = generation.lower()
         generation = generation.split(self.ANSWER_TRIGGER.lower())
         answer_flag = True if len(generation) > 1 else False
