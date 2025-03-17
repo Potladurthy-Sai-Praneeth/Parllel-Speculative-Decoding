@@ -43,7 +43,7 @@ class Decoding(ABC):
                 for idx in range(self.args.num_samples_per_task):
                     self.all_draft_models.append(AutoModelForCausalLM.from_pretrained(self.args.draft_models[idx], device_map="cuda:0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval())
             else:
-                self.target_model = AutoModelForCausalLM.from_pretrained(self.args.target_model, device_map="low_balanced_0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval()
+                self.target_model = AutoModelForCausalLM.from_pretrained(self.args.target_model, device_map="balanced_low_0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval()
         
 
     def load_tokenizer(self):
