@@ -63,10 +63,147 @@ class Decoding(ABC):
     @abstractmethod
     def postprocess(self, input_text, output_text):
         pass
-    
+
     
     @torch.no_grad()
     def parallel_speculative_decoding(self, prefix):
+        # ... (initial setup remains the same)
+        if self.accelerator.is_main_process:
+            for idx ,m in enumerate(self.all_draft_models):
+                self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
+                self.kv_cache_models[idx].vocab_size = self.vocab_size
+            device = self.all_draft_models[-1].device
+        else:
+            model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
+            model.vocab_size = self.vocab_size
+            device = self.target_model.device
+
+        max_tokens = prefix.shape[1] + self.args.max_tokens
+        
+        # this flag is used to determine the current verify mode.
+        cur_mode = True
+        num_acc_token = 0
+
+        while prefix.shape[1] < max_tokens:
+            prefix_len = prefix.shape[1]
+            input_ids = prefix.to(device)
+
+            # Main process: Generate all draft probabilities
+            if self.accelerator.is_main_process:
+                draft_probs = []
+                for idx, kv_model in self.kv_cache_models.items():
+                    x = kv_model.generate(input_ids, self.args.gamma)
+                    prob = kv_model._prob_history[:, prefix_len - self.args.gamma - 1:prefix_len, :self.vocab_size].to(torch.float32)
+                    # prob[:, 0, 0] = -1
+                    # prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
+                    draft_probs.append(prob)
+                    self.draft_forward_times += self.args.gamma
+                # Stack all draft probs into a batch [num_drafts, batch, gamma, vocab]
+                draft_probs = torch.stack(draft_probs, dim=0)
+            else:
+                # Non-main process: Generate target probability once
+                x = model.generate(input_ids, 1)
+                prob = model._prob_history[:, prefix_len - self.args.gamma - 1:prefix_len, :self.vocab_size].to(torch.float32)
+                prob = prob.squeeze(0).to("cuda:1")
+                self.target_forward_times += 1
+
+            # Gather all probabilities across processes
+            self.accelerator.wait_for_everyone()
+            gathered_probs = self.accelerator.gather(draft_probs if self.accelerator.is_main_process else prob)
+
+            # Split into draft and target probabilities
+            if self.accelerator.is_main_process:
+                num_drafts = len(self.kv_cache_models)
+                all_draft_probs = gathered_probs[:num_drafts]  # [num_drafts, 1, gamma, vocab]
+                target_probs = gathered_probs[num_drafts:]     # [1, 1, gamma, vocab]
+
+                print(all_draft_probs.shape, target_probs.shape)
+            else:
+                # Non-main process does not participate in verification
+                continue
+
+            # Track the best candidate across all drafts
+            temp_prefix = prefix.clone()
+           
+            temp_tokens = 0
+            num_accept_tokens= []
+
+            # Verify each draft against the target
+            for draft_idx in range(all_draft_probs.shape[0]):
+                draft_prob_single = all_draft_probs[draft_idx]
+                draft_ids = draft_prob_single[:, 0, 1:self.args.gamma * 2].int()
+                draft_prob = draft_prob_single[:, 1:, :]
+                target_prob = target_probs[:, 1:, :]
+
+                # Original verification logic for one draft-target pair
+                # ... (reuse the existing code for token acceptance/rejection)
+                # Update best_prefix if this draft has more accepted tokens
+
+                if cur_mode:
+                    first_token = draft_ids[:, -self.args.gamma]
+                    torch.manual_seed(self.seed + prefix_len)
+
+                    r = torch.rand(1, device=device)
+                    if  r > target_prob[:, -1, first_token] / draft_prob[:, -1, first_token]:
+                        # reject the first token
+                        t = sample(max_fn(target_prob[:, -1, :] - draft_prob[:, -1, :]))
+                        auxilairy_prefix = torch.cat((input_ids, t), dim=1)
+                        
+                        # record the number of accepted tokens
+                        num_accept_tokens.append(temp_tokens)
+                        temp_tokens = 0
+                        
+                        if self.accelerator.is_main_process:
+                            # rollback the small model kv cache
+                            kv_model.rollback(prefix_len)
+                    else:
+                        # accept the first token, change the mode
+                        cur_mode = False
+                        auxilairy_prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
+                        temp_tokens += 1
+
+                else:
+                    n = self.args.gamma
+                    for i in range(self.args.gamma):
+                        token = draft_ids[:, i]
+                        torch.manual_seed(self.seed + prefix_len - self.args.gamma + i)
+                        r = torch.rand(1, device=device)
+                        if r > target_prob[:, i, token] / draft_prob[:, i, token]:
+                            n = i
+                            break
+                    if n == self.args.gamma:
+                        # accept all guess tokens
+                        auxilairy_prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
+                        temp_tokens += self.args.gamma
+                    else:
+                        # reject someone, change the mode
+                        assert n < self.args.gamma
+                        cur_mode = True
+                        t = sample(max_fn(target_prob[:, n, :] - draft_prob[:, n, :]))
+                        
+                        auxilairy_prefix = torch.cat((input_ids[:, :prefix_len-self.args.gamma + n + 1], t), dim=1)
+                        num_accept_tokens.append(temp_tokens + n)
+                        temp_tokens = 0
+                        # rollback both the large model and the small model kv cache
+                        model.rollback(prefix_len - self.args.gamma +n+1)
+                        kv_model.rollback(prefix_len - self.args.gamma +n+1)
+                
+                if len(num_accept_tokens)>=len(self.num_acc_tokens):
+                    self.num_acc_tokens = num_accept_tokens
+                    temp_prefix = auxilairy_prefix
+                    num_acc_token = temp_tokens
+                       
+                temp_tokens = 0
+                num_accept_tokens = []
+                cur_mode = True
+
+            prefix = temp_prefix.clone()
+
+        return prefix
+        
+    
+    @torch.no_grad()
+    def parallel_speculative_decoding_my_code(self, prefix):
         # parallel speculative decoding
         if self.accelerator.is_main_process:
             for idx ,m in enumerate(self.all_draft_models):
