@@ -36,7 +36,7 @@ class Decoding(ABC):
     
     def load_model(self):
         # * load models according to different evaluation methods.
-        self.color_print(f"Loading models:\n{self.args.draft_model}\n{self.args.target_model}", 3)
+        self.color_print(f"Loading models: \n Draft : {self.args.draft_models}\n Target : {self.args.target_model}", 3)
        
         if self.args.eval_mode == "para_sd":
             if self.accelerator.is_main_process:
