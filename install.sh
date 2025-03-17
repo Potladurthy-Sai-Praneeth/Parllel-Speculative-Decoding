@@ -1,7 +1,8 @@
 # install packages
 # pip3 install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu121
 # pip3 install torch==2.1.2 torchvision==0.16.2 torchaudio==2.1.2 --index-url https://download.pytorch.org/whl/cu118
-pip3 install transformers>=4.49.0 tqdm ipdb accelerate numpy shortuuid fschat fastchat
+pip3 install transformers==4.49.0 
+pip3 install tqdm ipdb accelerate numpy shortuuid fschat fastchat
 
 # get fastchat for mt-bench
 # git clone https://github.com/lm-sys/FastChat.git
