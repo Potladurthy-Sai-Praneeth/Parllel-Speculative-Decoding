@@ -88,17 +88,17 @@ class Decoding(ABC):
             prefix_len = prefix.shape[1]
             input_ids = prefix.to(device)
 
-            if not self.accelerator.is_main_process:
-                x = model.generate(input_ids, 1)
-                prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
-                prob = prob.to("cuda:1")
-                self.target_forward_times += 1
-
             temp_prefix = prefix.clone()
            
             temp_tokens = 0
             num_accept_tokens= []
-            
+
+            # if not self.accelerator.is_main_process:
+            #     x = model.generate(input_ids, 1)
+            #     prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
+            #     prob = prob.to("cuda:1")
+            #     self.target_forward_times += 1
+        
             for idx,kv_model in self.kv_cache_models.items():
                 auxilairy_prefix = prefix.clone()
                 if self.accelerator.is_main_process:
@@ -107,6 +107,12 @@ class Decoding(ABC):
                     prob[:, 0, 0] = -1
                     prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
                     self.draft_forward_times += self.args.gamma
+                
+                else:
+                    x = model.generate(input_ids, 1)
+                    prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
+                    prob = prob.to("cuda:1")
+                    self.target_forward_times += 1
                 
                 self.accelerator.wait_for_everyone()
 
