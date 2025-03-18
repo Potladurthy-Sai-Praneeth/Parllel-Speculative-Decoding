@@ -87,13 +87,13 @@ class Decoding(ABC):
             input_ids = prefix.to(device)
             if self.accelerator.is_main_process:
                 x = model.generate(input_ids, self.args.gamma)
-                prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size]
+                prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
                 prob[:, 0, 0] = -1
                 prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
                 self.draft_forward_times += self.args.gamma
             else:
                 x = model.generate(input_ids, 1)
-                prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size]
+                prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
                 # ! the prob of the target model should be moved to a different device of the draft device to avoid deadlock
                 prob = prob.to("cuda:1")
                 self.target_forward_times += 1
