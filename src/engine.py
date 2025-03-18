@@ -210,13 +210,13 @@ class Decoding(ABC):
     @torch.no_grad()
     def parallel_speculative_decoding(self, prefix):   # My code
         # parallel speculative decoding  
-        if self.accelerator.is_main_process:
-            for idx ,m in enumerate(self.all_draft_models):
-                print(f'Loading draft model {idx}')
-                self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
-                self.kv_cache_models[idx].vocab_size = self.vocab_size
-            device = self.all_draft_models[-1].device
-        else:
+        # if self.accelerator.is_main_process:
+        for idx ,m in enumerate(self.all_draft_models):
+            print(f'Loading draft model {idx}')
+            self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
+            self.kv_cache_models[idx].vocab_size = self.vocab_size
+        device = self.all_draft_models[-1].device
+        if not self.accelerator.is_main_process:
             print(f'Loading target model')
             model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
             model.vocab_size = self.vocab_size
