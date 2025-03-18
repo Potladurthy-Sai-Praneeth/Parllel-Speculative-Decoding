@@ -350,15 +350,23 @@ class KVCacheModel:
             
             for model_idx in range(len(self._models)):
                 pos = prefix_length + i
+                if all_probs[model_idx] is None:
+                    continue  # Skip models with no probabilities
+                if pos >= all_probs[model_idx].shape[1]:
+                    continue  # Avoid out-of-bounds access
                 prob_slice = all_probs[model_idx][:, pos:pos+1, :]  # (batch, 1, vocab)
                 
-                if prob_slice is not None and prob_slice.max() > best_prob:
-                    best_prob = prob_slice.max()
+                if prob_slice.numel() == 0:
+                    continue  # Skip empty slices
+                current_max = prob_slice.max(dim=-1)[0].max().item()  # Max over vocab and batch
+                if current_max > best_prob:
+                    best_prob = current_max
                     best_slice = prob_slice
+                    best_model_idx = model_idx
             
             if best_slice is not None:
                 merged_probs.append(best_slice)
-                token = all_sequences[model_idx][:, pos:pos+1]
+                token = all_sequences[best_model_idx][:, pos:pos+1]
                 merged_sequence = torch.cat((merged_sequence, token), dim=1)
 
         # Aggregate prob_history
@@ -367,7 +375,7 @@ class KVCacheModel:
             prefix_probs = all_probs[0][:, :prefix_length, :]  # Use first model's prefix
             self._prob_history = torch.cat([prefix_probs, merged_probs], dim=1)
         else:
-            self._prob_history = all_probs[0][:, :prefix_length, :]
+            self._prob_history = all_probs[0][:, :prefix_length, :] if all_probs[0] is not None else None
 
         return merged_sequence
 
@@ -388,4 +396,5 @@ class KVCacheModel:
             if state['prob_history'] is not None:
                 state['prob_history'] = state['prob_history'][:, :end_pos, :]
         # Also update aggregated prob_history
-        self._prob_history = self._prob_history[:, :end_pos, :]
+        if self._prob_history is not None:
+            self._prob_history = self._prob_history[:, :end_pos, :]
