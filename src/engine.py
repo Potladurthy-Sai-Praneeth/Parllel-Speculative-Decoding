@@ -116,12 +116,14 @@ class Decoding(ABC):
             gathered_probs = self.accelerator.gather(draft_probs if self.accelerator.is_main_process else prob)
 
             # Split into draft and target probabilities
-            if self.accelerator.is_main_process:
-                num_drafts = len(self.kv_cache_models)
-                all_draft_probs = gathered_probs[:num_drafts]  # [num_drafts, 1, gamma, vocab]
-                target_probs = gathered_probs[num_drafts:]     # [1, 1, gamma, vocab]
+            # if self.accelerator.is_main_process:
+            num_drafts = len(self.kv_cache_models)
+            all_draft_probs = gathered_probs[:num_drafts]  # [num_drafts, 1, gamma, vocab]
+            target_probs = gathered_probs[num_drafts:]     # [1, 1, gamma, vocab]
 
             # Track the best candidate across all drafts
+            print(f'All draft probs shape is {all_draft_probs.shape}')
+            print(f'Target probs shape is {target_probs.shape}')
             temp_prefix = prefix.clone()
            
             temp_tokens = 0
@@ -130,6 +132,7 @@ class Decoding(ABC):
             # Verify each draft against the target
             print(f'Going inside for loop for comparison')
             for draft_idx in range(all_draft_probs.shape[0]):
+                print(f'Comapring the probs of draft with index {draft_idx}')
                 auxilairy_prefix = prefix.clone()
                 draft_prob_single = all_draft_probs[draft_idx]
                 draft_ids = draft_prob_single[:, 0, 1:self.args.gamma * 2].int()
