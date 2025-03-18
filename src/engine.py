@@ -87,8 +87,7 @@ class Decoding(ABC):
         print(f'Going inside While loop , acclerator {self.accelerator.is_main_process}')
 
         while prefix.shape[1] < max_tokens:
-            print(prefix.shape[1], max_tokens)
-            print(prefix.shape, "prefix shape")
+            print(f'Inside while loop with prefix shape {prefix.shape} acclerator {self.accelerator.is_main_process}')
             prefix_len = prefix.shape[1]
             input_ids = prefix.to(device)
 
@@ -200,13 +199,17 @@ class Decoding(ABC):
                 if len(num_accept_tokens)>=len(self.num_acc_tokens):
                     self.num_acc_tokens = num_accept_tokens
                     temp_prefix = auxilairy_prefix
+                    print(f'Updated temp prefix shape is {temp_prefix.shape} , acclerator {self.accelerator.is_main_process}')
+                    print(f'len of num_acc_tokens is {len(self.num_acc_tokens)} , acclerator {self.accelerator.is_main_process}')
                     num_acc_token = temp_tokens
+
                        
                 temp_tokens = 0
                 num_accept_tokens = []
                 cur_mode = True
 
             prefix = temp_prefix.clone()
+
             print(f'After one round of comparison we have prefix shape is {prefix.shape} , acclerator {self.accelerator.is_main_process}')
 
         return prefix
