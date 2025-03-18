@@ -38,7 +38,7 @@ class EvalHumaneval(Decoding):
                 input_ids = self.tokenizer.encode(datum["input_text"], add_special_tokens=encode_special_token_flag)
                 datum["input_ids"] = torch.tensor(input_ids).unsqueeze(0)
                 data.append(datum)
-        self.data = data[:5]
+        self.data = data[:1]
 
     def preprocess(self, input_text):
         text = input_text.strip()

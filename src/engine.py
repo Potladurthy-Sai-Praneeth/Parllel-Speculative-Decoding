@@ -33,7 +33,7 @@ class Decoding(ABC):
     
     def load_model(self):
         # * load models according to different evaluation methods.
-        self.color_print(f"Loading models: \n Draft : {self.args.draft_models}\n Target : {self.args.target_model}", 3)
+        # self.color_print(f"Loading models: \n Draft : {self.args.draft_models}\n Target : {self.args.target_model}", 3)
        
         if self.args.eval_mode == "para_sd":
             if self.accelerator.is_main_process:
@@ -46,7 +46,7 @@ class Decoding(ABC):
 
     def load_tokenizer(self):
         # * load tokenizers
-        self.color_print(f"Loading tokenizer of {self.args.target_model}...", 3)
+        # self.color_print(f"Loading tokenizer of {self.args.target_model}...", 3)
         self.tokenizer = AutoTokenizer.from_pretrained(self.args.target_model, trust_remote_code=True)
         self.tokenizer.padding_side = "right"
 
@@ -81,11 +81,14 @@ class Decoding(ABC):
         cur_mode = True
         num_acc_token = 0
 
+        # print(f'Going inside while loop')
         while prefix.shape[1] < max_tokens:
+            # print(f'Beginning Prefix shape is {prefix.shape}')
             prefix_len = prefix.shape[1]
             
             input_ids = prefix.to(device)
             if self.accelerator.is_main_process:
+                # print(f'Generating the draft model outputs')
                 x = model.generate(input_ids, self.args.gamma)
                 prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
                 prob[:, 0, 0] = -1
@@ -93,6 +96,7 @@ class Decoding(ABC):
                 self.draft_forward_times += self.args.gamma
             else:
                 x = model.generate(input_ids, 1)
+                # print(f'Generating the target model outputs')
                 prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
                 # ! the prob of the target model should be moved to a different device of the draft device to avoid deadlock
                 prob = prob.to("cuda:1")
@@ -102,6 +106,7 @@ class Decoding(ABC):
 
             # verification
             all_prob = self.accelerator.gather(prob).to(device)
+            # print(f'all_prob shape: {all_prob.shape}')
             draft_ids = all_prob[0, [0], 1:self.args.gamma*2].int()
             draft_prob = all_prob[[0], 1:, :]
             target_prob = all_prob[[1], 1:, :]
@@ -113,6 +118,7 @@ class Decoding(ABC):
                 r = torch.rand(1, device=device)
                 if  r > target_prob[:, -1, first_token] / draft_prob[:, -1, first_token]:
                     # reject the first token
+                    # print(f'Rejecting the first token')
                     t = sample(max_fn(target_prob[:, -1, :] - draft_prob[:, -1, :]))
                     prefix = torch.cat((input_ids, t), dim=1)
                     
@@ -125,6 +131,7 @@ class Decoding(ABC):
                         model.rollback(prefix_len)
                 else:
                     # accept the first token, change the mode
+                    # print(f'Accepting the first token and changing the mode')
                     cur_mode = False
                     prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
                     num_acc_token += 1
@@ -140,6 +147,7 @@ class Decoding(ABC):
                         break
                 if n == self.args.gamma:
                     # accept all guess tokens
+                    # print(f'Accepting all guess tokens')
                     prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
                     num_acc_token += self.args.gamma
                 else:
@@ -155,6 +163,7 @@ class Decoding(ABC):
                     model.rollback(prefix_len - self.args.gamma +n+1)
             
             self.accelerator.wait_for_everyone()
+            # print(f'Updated prefix shape: {prefix.shape}')
             
         return prefix
 
@@ -164,6 +173,6 @@ class Decoding(ABC):
         pass
 
     def color_print(self, content: str, color_number: int=4):
-        """print content with color. Some color numbers are listed: Gray: 0, Red: 1, Green: 2, Yellow: 3, Blue: 4."""
+        # """print content with color. Some color numbers are listed: Gray: 0, Red: 1, Green: 2, Yellow: 3, Blue: 4."""
         if self.accelerator.is_main_process:
             print(f"\033[9{color_number}m{content}\033[0m")

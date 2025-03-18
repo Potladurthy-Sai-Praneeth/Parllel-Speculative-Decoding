@@ -376,6 +376,7 @@ class KVCacheModel:
 
         # Generate sequences for each model
         for model_idx in range(len(self._models)):
+            # print(f'Switching to model {model_idx}')
             self._switch_to_model(model_idx)
             # Reset model state for new prefix
             self._model_states[model_idx] = {'past_key_values': None, 'prob_history': None}
@@ -394,6 +395,7 @@ class KVCacheModel:
         # Merge sequences and probabilities
         merged_sequence = prefix.clone().to(self._models[0].device)
         merged_probs = []
+        # print(f'Merging sequences {merged_sequence.shape}')
         
         for i in range(gamma):
             best_prob = -float('inf')
@@ -426,6 +428,7 @@ class KVCacheModel:
 
         # Aggregate prob_history
         if merged_probs:
+            # print(f'Aggregating prob_history')
             merged_probs = torch.cat(merged_probs, dim=1)
             prefix_probs = all_probs[0][:, :prefix_length, :]
             self._prob_history = torch.cat([prefix_probs, merged_probs], dim=1)
@@ -459,6 +462,7 @@ class KVCacheModel:
     def rollback(self, end_pos: int):
         """Rollback all models' states to a previous position."""
         for state in self._model_states:
+            # print(f'Rolling back model state {state}')
             if state['past_key_values'] is not None:
                 # Check the type of past_key_values
                 if hasattr(state['past_key_values'], 'get_seq_length'):
