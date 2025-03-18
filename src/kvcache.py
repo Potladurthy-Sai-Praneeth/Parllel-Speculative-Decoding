@@ -26,6 +26,9 @@ class KVCacheModel():
             cached_len = self._past_key_values.get_seq_length()
                 
             last_input_id = input_ids[:, cached_len:]
+
+            print(last_input_id)
+            
             if last_input_id is None:
                 return self.last_q
 
