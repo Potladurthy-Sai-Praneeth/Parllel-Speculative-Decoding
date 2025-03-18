@@ -87,6 +87,8 @@ class Decoding(ABC):
         print(f'Going inside While loop , acclerator {self.accelerator.is_main_process}')
 
         while prefix.shape[1] < max_tokens:
+            print(prefix.shape[1], max_tokens)
+            print(prefix.shape, "prefix shape")
             prefix_len = prefix.shape[1]
             input_ids = prefix.to(device)
 
