@@ -80,8 +80,9 @@ class Decoding(ABC):
         max_tokens = prefix.shape[1] + self.args.max_tokens
         
         # Synchronize prefix across processes at the start
-        gathered_prefix = self.accelerator.gather(prefix.to(device))
-        prefix = gathered_prefix[0].clone()  # Use first copy since all should be identical
+        prefix = self.accelerator.gather(prefix.to(device))
+        print(prefix.shape)
+        # prefix = gathered_prefix[0].clone()  # Use first copy since all should be identical
         
         while prefix.shape[1] < max_tokens:
             prefix_len = prefix.shape[1]
