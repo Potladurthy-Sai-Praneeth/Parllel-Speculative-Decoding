@@ -253,7 +253,6 @@ torch.backends.cuda.enable_flash_sdp(False)
 #         self._past_key_values.crop(end_pos)
 #         self._prob_history = self._prob_history[:, :end_pos, :]
 
-
 class KVCacheModel:
     def __init__(self, models: list, temperature: float = 1, top_k: int = 0, top_p: float = 0) -> None:
         self._models = models
@@ -261,13 +260,16 @@ class KVCacheModel:
         self._top_k = top_k
         self._top_p = top_p
         self.vocab_size = None  # Set externally
+        self._prob_history = None  # Aggregated probability history
 
-        # Initialize per-model states (KV cache and prob history)
-        self._model_states = [{'past_key_values': None, 'prob_history': None} for _ in models]
-        self._current_model_idx = 0
+        # Per-model states (KV cache and prob history)
+        self._model_states = [
+            {'past_key_values': None, 'prob_history': None} 
+            for _ in models
+        ]
 
     def _switch_to_model(self, model_idx):
-        """Switch active model without resetting its state."""
+        """Switch active model without resetting state."""
         if model_idx >= len(self._models):
             model_idx = 0
         self._current_model_idx = model_idx
@@ -277,68 +279,95 @@ class KVCacheModel:
         model_idx = self._current_model_idx
         model = self._models[model_idx]
         state = self._model_states[model_idx]
-        past_key_values = state['past_key_values']
-        prob_history = state['prob_history']
-
-        if past_key_values is None:
+        
+        if state['past_key_values'] is None:
             outputs = model(input_ids)
-            prob_history = outputs.logits[:, :, :self.vocab_size]
-            for i in range(prob_history.shape[-2]):
-                prob_history[:, i, :] = norm_logits(prob_history[:, i, :], self._temperature, self._top_k, self._top_p)
-            past_key_values = outputs.past_key_values
-            last_q = prob_history[:, -1, :]
+            state['prob_history'] = outputs.logits[:, :, :self.vocab_size]
+            for i in range(state['prob_history'].shape[-2]):
+                state['prob_history'][:, i, :] = norm_logits(
+                    state['prob_history'][:, i, :], 
+                    self._temperature, 
+                    self._top_k, 
+                    self._top_p
+                )
+            state['past_key_values'] = outputs.past_key_values
+            last_q = state['prob_history'][:, -1, :]
         else:
-            cached_len = past_key_values[0][0].shape[2] if past_key_values[0][0] is not None else 0
+            cached_len = state['past_key_values'][0][0].shape[2]
             last_input_id = input_ids[:, cached_len:]
-            outputs = model(last_input_id, past_key_values=past_key_values, use_cache=True)
+            outputs = model(
+                last_input_id, 
+                past_key_values=state['past_key_values'], 
+                use_cache=True
+            )
             not_cached_q = outputs.logits[:, :, :self.vocab_size]
             for i in range(not_cached_q.shape[-2]):
-                not_cached_q[:, i, :] = norm_logits(not_cached_q[:, i, :], self._temperature, self._top_k, self._top_p)
-            prob_history = torch.cat([prob_history, not_cached_q], dim=1) if prob_history is not None else not_cached_q
+                not_cached_q[:, i, :] = norm_logits(
+                    not_cached_q[:, i, :], 
+                    self._temperature, 
+                    self._top_k, 
+                    self._top_p
+                )
+            state['prob_history'] = torch.cat(
+                [state['prob_history'], not_cached_q], 
+                dim=1
+            ) if state['prob_history'] is not None else not_cached_q
             last_q = not_cached_q[:, -1, :]
-            past_key_values = outputs.past_key_values
-
-        # Update the current model's state
-        state['past_key_values'] = past_key_values
-        state['prob_history'] = prob_history
+            state['past_key_values'] = outputs.past_key_values
+        
         return last_q
 
     def _generate_with_kvcache(self, prefix: torch.Tensor, gamma: int) -> torch.Tensor:
-        """Generate γ tokens using all models, then merge the best tokens."""
+        """Generate γ tokens using all models and merge the best tokens."""
         all_sequences = []
         all_probs = []
+        prefix_length = prefix.shape[1]
 
+        # Generate sequences for each model
         for model_idx in range(len(self._models)):
             self._switch_to_model(model_idx)
-            # Reset this model's state to process the new prefix
+            # Reset model state for new prefix
             self._model_states[model_idx] = {'past_key_values': None, 'prob_history': None}
             model = self._models[model_idx]
             x = prefix.to(model.device)
             current_sequence = x.clone()
-            current_probs = []
-
+            
             for _ in range(gamma):
                 q = self._forward_with_kvcache(current_sequence)
-                next_tok = sample(q)
-                current_probs.append(q[0, next_tok.item()].item())  # Probability of chosen token
-                current_sequence = torch.cat((current_sequence, next_tok.unsqueeze(0)), dim=1)
-
+                next_tok = sample(q)  # Shape: (batch_size, 1)
+                current_sequence = torch.cat((current_sequence, next_tok), dim=1)
+            
             all_sequences.append(current_sequence)
-            all_probs.append(current_probs)
+            all_probs.append(self._model_states[model_idx]['prob_history'])
 
-        # Merge sequences by selecting the highest probability token at each position
+        # Merge sequences and probabilities
         merged_sequence = prefix.clone().to(self._models[0].device)
+        merged_probs = []
+        
         for i in range(gamma):
-            best_token = None
             best_prob = -float('inf')
+            best_slice = None
+            
             for model_idx in range(len(self._models)):
-                pos = prefix.shape[1] + i
-                token = all_sequences[model_idx][:, pos]
-                prob = all_probs[model_idx][i]
-                if prob > best_prob:
-                    best_prob = prob
-                    best_token = token
-            merged_sequence = torch.cat((merged_sequence, best_token.unsqueeze(0)), dim=1)
+                pos = prefix_length + i
+                prob_slice = all_probs[model_idx][:, pos:pos+1, :]  # (batch, 1, vocab)
+                
+                if prob_slice is not None and prob_slice.max() > best_prob:
+                    best_prob = prob_slice.max()
+                    best_slice = prob_slice
+            
+            if best_slice is not None:
+                merged_probs.append(best_slice)
+                token = all_sequences[model_idx][:, pos:pos+1]
+                merged_sequence = torch.cat((merged_sequence, token), dim=1)
+
+        # Aggregate prob_history
+        if merged_probs:
+            merged_probs = torch.cat(merged_probs, dim=1)
+            prefix_probs = all_probs[0][:, :prefix_length, :]  # Use first model's prefix
+            self._prob_history = torch.cat([prefix_probs, merged_probs], dim=1)
+        else:
+            self._prob_history = all_probs[0][:, :prefix_length, :]
 
         return merged_sequence
 
@@ -348,12 +377,15 @@ class KVCacheModel:
 
     @torch.no_grad()
     def rollback(self, end_pos: int):
-        """Rollback all models' KV caches to a previous position."""
+        """Rollback all models' states to a previous position."""
         for state in self._model_states:
             if state['past_key_values'] is not None:
-                # Assuming past_key_values is compatible with crop
-                state['past_key_values'] = [(k[:, :, :end_pos, :] if k is not None else k,
-                                            v[:, :, :end_pos, :] if v is not None else v)
-                                            for k, v in state['past_key_values']]
+                # Crop KV cache
+                state['past_key_values'] = [
+                    (k[:, :, :end_pos, :], v[:, :, :end_pos, :]) 
+                    for k, v in state['past_key_values']
+                ]
             if state['prob_history'] is not None:
                 state['prob_history'] = state['prob_history'][:, :end_pos, :]
+        # Also update aggregated prob_history
+        self._prob_history = self._prob_history[:, :end_pos, :]
