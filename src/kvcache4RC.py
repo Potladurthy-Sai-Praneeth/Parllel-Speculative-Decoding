@@ -182,7 +182,6 @@ class KVCacheModel:   # Working code but slow
             self._prob_history = self._prob_history[:, :end_pos, :]
 
 '''
-
 class KVCacheModel:   
     def __init__(self, models: list, temperature: float = 1, top_k: int = 0, top_p: float = 0) -> None:
         self._models = models
@@ -190,10 +189,8 @@ class KVCacheModel:
         self._top_k = top_k
         self._top_p = top_p
         self.vocab_size = None
-        self._prob_history = None  # Aggregated probability history
-        
-        # Pre-compute device list for faster access
-        self._devices = [model.device for model in models]
+        self._prob_history = None
+        self._current_model_idx = 0  # Initialize to avoid potential errors
         
         self._model_states = [
             {'past_key_values': None, 'prob_history': None} 
@@ -212,21 +209,24 @@ class KVCacheModel:
         model = self._models[model_idx]
         state = self._model_states[model_idx]
         
+        # Ensure input is on the correct device - do this once
+        input_ids = input_ids.to(model.device)
+        
         if state['past_key_values'] is None:
-            # Move input to correct device only once
-            input_ids = input_ids.to(model.device)
-            
-            # Full forward pass
+            # Initial forward pass without KV cache
             outputs = model(input_ids)
             logits = outputs.logits[:, :, :self.vocab_size]
             
-            # Vectorized normalization instead of loop
-            state['prob_history'] = torch.stack([
-                norm_logits(logits[:, i, :], self._temperature, self._top_k, self._top_p)
-                for i in range(logits.shape[1])
-            ], dim=1)
-            
-            # Store past_key_values in model's native format
+            # Apply normalization in a single batch operation if possible
+            state['prob_history'] = logits.clone()
+            for i in range(logits.shape[1]):
+                state['prob_history'][:, i, :] = norm_logits(
+                    logits[:, i, :], 
+                    self._temperature, 
+                    self._top_k, 
+                    self._top_p
+                )
+                
             state['past_key_values'] = outputs.past_key_values
             last_q = state['prob_history'][:, -1, :]
         else:
@@ -236,9 +236,13 @@ class KVCacheModel:
             else:
                 cached_len = state['past_key_values'][0][0].shape[2]
                 
-            # Only process new tokens
-            last_input_id = input_ids[:, cached_len:].to(model.device)
+            # Process only new tokens (optimization for incremental processing)
+            last_input_id = input_ids[:, cached_len:]
             
+            # Skip inference if no new tokens
+            if last_input_id.shape[1] == 0:
+                return state['prob_history'][:, -1, :]
+                
             outputs = model(
                 last_input_id, 
                 past_key_values=state['past_key_values'], 
@@ -247,13 +251,16 @@ class KVCacheModel:
             
             not_cached_q = outputs.logits[:, :, :self.vocab_size]
             
-            # Vectorized normalization
-            not_cached_q = torch.stack([
-                norm_logits(not_cached_q[:, i, :], self._temperature, self._top_k, self._top_p)
-                for i in range(not_cached_q.shape[1])
-            ], dim=1)
-            
-            # Update state probabilities
+            # Apply normalization
+            for i in range(not_cached_q.shape[1]):
+                not_cached_q[:, i, :] = norm_logits(
+                    not_cached_q[:, i, :], 
+                    self._temperature, 
+                    self._top_k, 
+                    self._top_p
+                )
+                
+            # Update probability history efficiently
             state['prob_history'] = torch.cat(
                 [state['prob_history'], not_cached_q], 
                 dim=1
@@ -269,89 +276,85 @@ class KVCacheModel:
         all_sequences = []
         all_probs = []
         prefix_length = prefix.shape[1]
-        
-        # Pre-allocate space for sequences
-        models_count = len(self._models)
         first_device = self._models[0].device
-        
+        model_count = len(self._models)
+
         # Generate sequences for each model
-        for model_idx in range(models_count):
+        for model_idx in range(model_count):
             self._switch_to_model(model_idx)
             # Reset model state for new prefix
             self._model_states[model_idx] = {'past_key_values': None, 'prob_history': None}
             model = self._models[model_idx]
-            x = prefix.to(model.device)
+            device = model.device
+            
+            # Move prefix to model device once
+            x = prefix.to(device)
             current_sequence = x.clone()
             
-            # Generate tokens for this model
+            # Generate tokens
             for _ in range(gamma):
                 q = self._forward_with_kvcache(current_sequence)
                 next_tok = sample(q)  # Shape: (batch_size, 1)
                 current_sequence = torch.cat((current_sequence, next_tok), dim=1)
             
+            # Store results
             all_sequences.append(current_sequence)
             all_probs.append(self._model_states[model_idx]['prob_history'])
 
-        # Pre-allocate merged sequence
+        # Create merged sequence on the first device
         merged_sequence = prefix.clone().to(first_device)
         merged_probs = []
         
-        # Pre-compute position indices to avoid repetitive calculations
-        positions = range(prefix_length, prefix_length + gamma)
-        
-        # Pre-calculate availability of probability slices
-        available_probs = [
-            [
-                (model_idx, i, all_probs[model_idx][:, i:i+1, :]) 
-                for model_idx in range(models_count)
-                if all_probs[model_idx] is not None and i < all_probs[model_idx].shape[1]
-            ]
-            for i in positions
-        ]
-        
-        # Process each position more efficiently
-        for idx, pos_data in enumerate(available_probs):
-            if not pos_data:  # No valid probabilities
-                pos = prefix_length + idx
-                token = all_sequences[0][:, pos:pos+1].to(first_device)
-                merged_sequence = torch.cat((merged_sequence, token), dim=1)
-                merged_probs.append(all_probs[0][:, pos:pos+1, :])
-                continue
-                
-            # Find best probability in one pass
-            best_model_idx = 0
+        # Process positions one by one
+        for i in range(gamma):
+            pos = prefix_length + i
             best_prob = -float('inf')
+            best_model_idx = 0
+            best_token = None
             best_slice = None
             
-            for model_idx, pos, prob_slice in pos_data:
+            # Find best token across models
+            for model_idx in range(model_count):
+                probs = all_probs[model_idx]
+                if probs is None or pos >= probs.shape[1]:
+                    continue
+                    
+                prob_slice = probs[:, pos:pos+1, :]
                 if prob_slice.numel() == 0:
                     continue
                     
+                # Get maximum probability
                 current_max = prob_slice.max(dim=-1)[0].max().item()
                 if current_max > best_prob:
                     best_prob = current_max
                     best_slice = prob_slice
                     best_model_idx = model_idx
+                    # Get token directly from sequence to avoid recomputing
+                    best_token = all_sequences[best_model_idx][:, pos:pos+1].to(first_device)
             
-            # Add best token to sequence
-            pos = prefix_length + idx
-            token = all_sequences[best_model_idx][:, pos:pos+1].to(first_device)
-            merged_sequence = torch.cat((merged_sequence, token), dim=1)
-            merged_probs.append(best_slice)
+            # Fall back to first model if no valid token was found
+            if best_token is None:
+                best_token = all_sequences[0][:, pos:pos+1].to(first_device)
+                best_slice = all_probs[0][:, pos:pos+1, :]
+                
+            # Add to merged results
+            merged_sequence = torch.cat((merged_sequence, best_token), dim=1)
+            merged_probs.append(best_slice.to(first_device))  # Move to first device
 
-        # Aggregate prob_history efficiently
+        # Aggregate probability history
         if merged_probs:
-            # Optimize concat operations
+            # Concatenate merged probabilities
             merged_probs = torch.cat(merged_probs, dim=1)
-            prefix_probs = all_probs[0][:, :prefix_length, :]
+            prefix_probs = all_probs[0][:, :prefix_length, :].to(first_device)
             self._prob_history = torch.cat([prefix_probs, merged_probs], dim=1)
         else:
-            self._prob_history = all_probs[0][:, :prefix_length, :]
+            self._prob_history = all_probs[0][:, :prefix_length, :].to(first_device)
 
         return merged_sequence
 
     @torch.no_grad()
     def generate(self, input: torch.Tensor, gamma: int) -> torch.Tensor:
+        # Use no_grad context for entire function to avoid building computational graph
         return self._generate_with_kvcache(input, gamma)
 
     @torch.no_grad()
@@ -363,16 +366,13 @@ class KVCacheModel:
                     if hasattr(state['past_key_values'], 'slice_and_return'):
                         state['past_key_values'] = state['past_key_values'].slice_and_return(0, end_pos)
                 else:
-                    # More efficient slicing
                     state['past_key_values'] = [
                         (k[:, :, :end_pos, :], v[:, :, :end_pos, :]) 
                         for k, v in state['past_key_values']
                     ]
             
-            # Efficient tensor slicing
             if state['prob_history'] is not None:
                 state['prob_history'] = state['prob_history'][:, :end_pos, :]
 
-        # Update main probability history
         if self._prob_history is not None:
             self._prob_history = self._prob_history[:, :end_pos, :]
