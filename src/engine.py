@@ -192,6 +192,9 @@ class Decoding(ABC):
                         model.rollback(prefix_len - self.args.gamma +n+1)
                         kv_model.rollback(prefix_len - self.args.gamma +n+1)
                 
+                print(f'For model {draft_idx} , auxilairy_prefix shape is {auxilairy_prefix.shape} , acclerator {self.accelerator.is_main_process}')
+                print(f'num_accept_tokens shape is {num_accept_tokens} , acclerator {self.accelerator.is_main_process}')
+                print(f'temp_tokens shape is {temp_tokens} , acclerator {self.accelerator.is_main_process}')
                 if len(num_accept_tokens)>=len(self.num_acc_tokens):
                     self.num_acc_tokens = num_accept_tokens
                     temp_prefix = auxilairy_prefix
