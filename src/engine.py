@@ -34,53 +34,21 @@ class Decoding(ABC):
 
         self.vocab_size = self.args.vocab_size
     
-    # def load_model(self):
-    #     # * load models according to different evaluation methods.
-    #     self.color_print(f"Loading models: \n Draft : {self.args.draft_models}\n Target : {self.args.target_model}", 3)
-       
-    #     if self.args.eval_mode == "para_sd":
-    #         if self.accelerator.is_main_process:
-    #             for idx in range(self.args.num_samples_per_task):
-    #                 self.all_draft_models.append(AutoModelForCausalLM.from_pretrained(self.args.draft_models[idx], device_map="cuda:0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval())
-    #         else:
-    #             self.target_model = AutoModelForCausalLM.from_pretrained(self.args.target_model, device_map="balanced_low_0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval()
-
     def load_model(self):
         # * load models according to different evaluation methods.
-        self.color_print(f"Loading models: \n Draft : {self.args.draft_models}\n Target : {self.args.target_model}", 3)
-    
+        self.color_print(f"Loading models: \n Draft : {self.args.draft_models}\n Target : {self.args.target_model}")
+       
         if self.args.eval_mode == "para_sd":
             if self.accelerator.is_main_process:
-                self.color_print("Loading draft models on main process", 2)
                 for idx in range(self.args.num_samples_per_task):
-                    self.all_draft_models.append(
-                        AutoModelForCausalLM.from_pretrained(
-                            self.args.draft_models[idx], 
-                            device_map="cuda:0", 
-                            torch_dtype=torch.bfloat16, 
-                            trust_remote_code=True
-                        ).eval()
-                    )
-                # Initialize KV cache models here to ensure they're available
-                for idx, m in enumerate(self.all_draft_models):
-                    self.color_print(f"Initializing KV cache for draft model {idx}", 2)
-                    self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
-                    self.kv_cache_models[idx].vocab_size = self.vocab_size
+                    self.all_draft_models.append(AutoModelForCausalLM.from_pretrained(self.args.draft_models[idx], device_map="cuda:0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval())
             else:
-                self.color_print("Loading target model on secondary process", 2)
-                self.target_model = AutoModelForCausalLM.from_pretrained(
-                    self.args.target_model, 
-                    device_map="balanced_low_0", 
-                    torch_dtype=torch.bfloat16, 
-                    trust_remote_code=True
-                ).eval()
-            
-        self.accelerator.wait_for_everyone()
+                self.target_model = AutoModelForCausalLM.from_pretrained(self.args.target_model, device_map="balanced_low_0", torch_dtype=torch.bfloat16, trust_remote_code=True).eval()
         
 
     def load_tokenizer(self):
         # * load tokenizers
-        self.color_print(f"Loading tokenizer of {self.args.target_model}...", 3)
+        self.color_print(f"Loading tokenizer of {self.args.target_model}...")
         self.tokenizer = AutoTokenizer.from_pretrained(self.args.target_model, trust_remote_code=True)
         self.tokenizer.padding_side = "right"
 
@@ -116,7 +84,7 @@ class Decoding(ABC):
         cur_mode = True
         num_acc_token = 0
 
-        print(f'Going inside While loop')
+        print(f'Going inside While loop , acclerator {self.accelerator.is_main_process}')
 
         while prefix.shape[1] < max_tokens:
             prefix_len = prefix.shape[1]
@@ -132,7 +100,7 @@ class Decoding(ABC):
                     # prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
                     draft_probs.append(prob)
                     self.draft_forward_times += self.args.gamma
-                    print(f'Finihsed generation of draft:{idx} with shape {prob.shape}')
+                    print(f'Finihsed generation of draft:{idx} with shape {prob.shape} , acclerator {self.accelerator.is_main_process}')
                 # Stack all draft probs into a batch [num_drafts, batch, gamma, vocab]
                 draft_probs = torch.stack(draft_probs, dim=0)
             else:
@@ -141,7 +109,7 @@ class Decoding(ABC):
                 prob = model._prob_history[:, prefix_len - self.args.gamma - 1:prefix_len, :self.vocab_size].to(torch.float32)
                 prob = prob.squeeze(0).to("cuda:1")
                 self.target_forward_times += 1
-                print(f'Finihsed generation of target with shape {prob.shape}')
+                print(f'Finihsed generation of target with shape {prob.shape} , acclerator {self.accelerator.is_main_process}')
 
             # Gather all probabilities across processes
             self.accelerator.wait_for_everyone()
@@ -154,17 +122,17 @@ class Decoding(ABC):
             target_probs = gathered_probs[num_drafts:]     # [1, 1, gamma, vocab]
 
             # Track the best candidate across all drafts
-            print(f'All draft probs shape is {all_draft_probs.shape}')
-            print(f'Target probs shape is {target_probs.shape}')
+            print(f'All draft probs shape is {all_draft_probs.shape} , acclerator {self.accelerator.is_main_process}')
+            print(f'Target probs shape is {target_probs.shape} , acclerator {self.accelerator.is_main_process}')
             temp_prefix = prefix.clone()
            
             temp_tokens = 0
             num_accept_tokens= []
 
             # Verify each draft against the target
-            print(f'Going inside for loop for comparison')
+            print(f'Going inside for loop for comparison , acclerator {self.accelerator.is_main_process}')
             for draft_idx in range(all_draft_probs.shape[0]):
-                print(f'Comapring the probs of draft with index {draft_idx}')
+                print(f'Comapring the probs of draft with index {draft_idx} , acclerator {self.accelerator.is_main_process}')
                 auxilairy_prefix = prefix.clone()
                 draft_prob_single = all_draft_probs[draft_idx]
                 draft_ids = draft_prob_single[:, 0, 1:self.args.gamma * 2].int()
@@ -234,7 +202,7 @@ class Decoding(ABC):
                 cur_mode = True
 
             prefix = temp_prefix.clone()
-            print(f'After one round of comparison we have prefix shape is {prefix.shape}')
+            print(f'After one round of comparison we have prefix shape is {prefix.shape} , acclerator {self.accelerator.is_main_process}')
 
         return prefix
         
@@ -244,12 +212,12 @@ class Decoding(ABC):
     #     # parallel speculative decoding  
     #     if self.accelerator.is_main_process:
     #         for idx ,m in enumerate(self.all_draft_models):
-    #             print(f'Loading draft model {idx}')
+    #             print(f'Loading draft model {idx} , acclerator {self.accelerator.is_main_process}')
     #             self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
     #             self.kv_cache_models[idx].vocab_size = self.vocab_size
     #             device = self.all_draft_models[idx].device
     #     else:
-    #         print(f'Loading target model')
+    #         print(f'Loading target model , acclerator {self.accelerator.is_main_process}')
     #         model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
     #         model.vocab_size = self.vocab_size
     #         device = self.target_model.device
@@ -271,18 +239,18 @@ class Decoding(ABC):
     #         num_accept_tokens= []
 
     #         if not self.accelerator.is_main_process:
-    #             print(f'Target model is generating the probabilities')
+    #             print(f'Target model is generating the probabilities , acclerator {self.accelerator.is_main_process}')
     #             x = model.generate(input_ids, 1)
     #             prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
     #             prob = prob.to("cuda:1")
     #             self.target_forward_times += 1
 
-    #         print(f'kv cache models are {self.kv_cache_models}')
+    #         print(f'kv cache models are {self.kv_cache_models} , acclerator {self.accelerator.is_main_process}')
     #         if self.kv_cache_models == {}:
     #             break
     #         for idx,kv_model in self.kv_cache_models.items():
     #             auxilairy_prefix = prefix.clone()
-    #             print(f'Draft model {idx} is generating the probabilities')
+    #             print(f'Draft model {idx} is generating the probabilities , acclerator {self.accelerator.is_main_process}')
     #             if self.accelerator.is_main_process:
     #                 x = kv_model.generate(input_ids, self.args.gamma)
     #                 prob = kv_model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
@@ -291,7 +259,7 @@ class Decoding(ABC):
     #                 self.draft_forward_times += self.args.gamma
                 
     #             # else:
-    #             #     print(f'Target model is generating the probabilities')
+    #             #     print(f'Target model is generating the probabilities , acclerator {self.accelerator.is_main_process}')
     #             #     x = model.generate(input_ids, 1)
     #             #     prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
     #             #     prob = prob.to("cuda:1")
@@ -306,11 +274,11 @@ class Decoding(ABC):
     #             draft_prob = all_prob[[0], 1:, :]
     #             target_prob = all_prob[[1], 1:, :]
 
-    #             print(f'All draft probs shape is {all_prob.shape}')
-    #             print(f'Draft probs shape is {draft_prob.shape}')
-    #             print(f'Target probs shape is {target_prob.shape}')
+    #             print(f'All draft probs shape is {all_prob.shape} , acclerator {self.accelerator.is_main_process}')
+    #             print(f'Draft probs shape is {draft_prob.shape} , acclerator {self.accelerator.is_main_process}')
+    #             print(f'Target probs shape is {target_prob.shape} , acclerator {self.accelerator.is_main_process}')
 
-    #             print(f'Proceeding for verification')
+    #             print(f'Proceeding for verification , acclerator {self.accelerator.is_main_process}')
 
     #             if cur_mode:
     #                 first_token = draft_ids[:, -self.args.gamma]
@@ -371,7 +339,7 @@ class Decoding(ABC):
     #             cur_mode = True
 
     #         prefix = temp_prefix.clone()
-    #         # print(f'After one round of comparison we have prefix shape is {prefix.shape}')
+    #         # print(f'After one round of comparison we have prefix shape is {prefix.shape} , acclerator {self.accelerator.is_main_process}')
 
     #     return prefix
 
