@@ -20,12 +20,15 @@ class KVCacheModel():
             for i in range(self._prob_history.shape[-2]):   
                 self._prob_history[:, i, :] = norm_logits(self._prob_history[:, i, :], self._temperature, self._top_k, self._top_p)
             self._past_key_values = outputs.past_key_values
-            last_q = self._prob_history[:, -1, :]
+            self.last_q = self._prob_history[:, -1, :]
         else:
             # return the last token's logits
             cached_len = self._past_key_values.get_seq_length()
                 
             last_input_id = input_ids[:, cached_len:]
+            if last_input_id is None:
+                return self.last_q
+
             if last_input_id.dim() == 1:
                 last_input_id = torch.unsqueeze(last_input_id, 0)
             
@@ -41,10 +44,10 @@ class KVCacheModel():
                 
             self._prob_history = torch.cat([self._prob_history, not_cached_q], dim=1)
             
-            last_q = not_cached_q[:, -1, :]
+            self.last_q = not_cached_q[:, -1, :]
             self._past_key_values = outputs.past_key_values
         
-        return last_q
+        return self.last_q
 
 
     def _generate_with_kvcache(self, prefix : torch.Tensor, 

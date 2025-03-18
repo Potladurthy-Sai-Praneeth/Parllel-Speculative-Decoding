@@ -116,8 +116,7 @@ class Decoding(ABC):
                 num_drafts = len(self.kv_cache_models)
                 all_draft_probs = gathered_probs[:num_drafts]  # [num_drafts, 1, gamma, vocab]
                 target_probs = gathered_probs[num_drafts:]     # [1, 1, gamma, vocab]
-
-                print(all_draft_probs.shape, target_probs.shape)
+                
             else:
                 # Non-main process does not participate in verification
                 continue
