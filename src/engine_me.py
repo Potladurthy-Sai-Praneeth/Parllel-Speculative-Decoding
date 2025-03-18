@@ -110,6 +110,7 @@ class Decoding(ABC):
                 # Non-main process: Generate target probability
                 x = model.generate(input_ids, 1)
                 target_prob = model._prob_history[:, prefix_len - self.args.gamma - 1:prefix_len, :self.vocab_size].to(torch.float32)
+                target_prob = target_prob.unsqueeze(0)  # [1, batch, seq_len, vocab]
                 self.target_forward_times += 1
             
             # Synchronize across processes before gathering
