@@ -253,7 +253,8 @@ torch.backends.cuda.enable_flash_sdp(False)
 #         self._past_key_values.crop(end_pos)
 #         self._prob_history = self._prob_history[:, :end_pos, :]
 
-class KVCacheModel:
+
+class KVCacheModel:   # Working code but slow
     def __init__(self, models: list, temperature: float = 1, top_k: int = 0, top_p: float = 0) -> None:
         self._models = models
         self._temperature = temperature
@@ -273,49 +274,6 @@ class KVCacheModel:
         if model_idx >= len(self._models):
             model_idx = 0
         self._current_model_idx = model_idx
-
-    # def _forward_with_kvcache(self, input_ids: torch.Tensor) -> torch.Tensor:   # Deep seek op (Issue with get_seq_length) 
-    #     """Forward pass using the current model's KV cache."""
-    #     model_idx = self._current_model_idx
-    #     model = self._models[model_idx]
-    #     state = self._model_states[model_idx]
-        
-    #     if state['past_key_values'] is None:
-    #         outputs = model(input_ids)
-    #         state['prob_history'] = outputs.logits[:, :, :self.vocab_size]
-    #         for i in range(state['prob_history'].shape[-2]):
-    #             state['prob_history'][:, i, :] = norm_logits(
-    #                 state['prob_history'][:, i, :], 
-    #                 self._temperature, 
-    #                 self._top_k, 
-    #                 self._top_p
-    #             )
-    #         state['past_key_values'] = outputs.past_key_values
-    #         last_q = state['prob_history'][:, -1, :]
-    #     else:
-    #         cached_len = state['past_key_values'][0][0].shape[2]
-    #         last_input_id = input_ids[:, cached_len:]
-    #         outputs = model(
-    #             last_input_id, 
-    #             past_key_values=state['past_key_values'], 
-    #             use_cache=True
-    #         )
-    #         not_cached_q = outputs.logits[:, :, :self.vocab_size]
-    #         for i in range(not_cached_q.shape[-2]):
-    #             not_cached_q[:, i, :] = norm_logits(
-    #                 not_cached_q[:, i, :], 
-    #                 self._temperature, 
-    #                 self._top_k, 
-    #                 self._top_p
-    #             )
-    #         state['prob_history'] = torch.cat(
-    #             [state['prob_history'], not_cached_q], 
-    #             dim=1
-    #         ) if state['prob_history'] is not None else not_cached_q
-    #         last_q = not_cached_q[:, -1, :]
-    #         state['past_key_values'] = outputs.past_key_values
-        
-    #     return last_q
 
     def _forward_with_kvcache(self, input_ids: torch.Tensor) -> torch.Tensor:   # claude
         """Forward pass using the current model's KV cache."""
@@ -442,24 +400,9 @@ class KVCacheModel:
     def generate(self, input: torch.Tensor, gamma: int) -> torch.Tensor:
         return self._generate_with_kvcache(input, gamma)
 
-    # @torch.no_grad()
-    # def rollback(self, end_pos: int):   # Deep seek 
-    #     """Rollback all models' states to a previous position."""
-    #     for state in self._model_states:
-    #         if state['past_key_values'] is not None:
-    #             # Crop KV cache
-    #             state['past_key_values'] = [
-    #                 (k[:, :, :end_pos, :], v[:, :, :end_pos, :]) 
-    #                 for k, v in state['past_key_values']
-    #             ]
-    #         if state['prob_history'] is not None:
-    #             state['prob_history'] = state['prob_history'][:, :end_pos, :]
-    #     # Also update aggregated prob_history
-    #     if self._prob_history is not None:
-    #         self._prob_history = self._prob_history[:, :end_pos, :]
 
     @torch.no_grad()
-    def rollback(self, end_pos: int):
+    def rollback(self, end_pos: int): # claude 
         """Rollback all models' states to a previous position."""
         for state in self._model_states:
             # print(f'Rolling back model state {state}')
@@ -485,3 +428,63 @@ class KVCacheModel:
         # Also update aggregated prob_history
         if self._prob_history is not None:
             self._prob_history = self._prob_history[:, :end_pos, :]
+
+
+    # def _forward_with_kvcache(self, input_ids: torch.Tensor) -> torch.Tensor:   # Deep seek op (Issue with get_seq_length) 
+    #     """Forward pass using the current model's KV cache."""
+    #     model_idx = self._current_model_idx
+    #     model = self._models[model_idx]
+    #     state = self._model_states[model_idx]
+        
+    #     if state['past_key_values'] is None:
+    #         outputs = model(input_ids)
+    #         state['prob_history'] = outputs.logits[:, :, :self.vocab_size]
+    #         for i in range(state['prob_history'].shape[-2]):
+    #             state['prob_history'][:, i, :] = norm_logits(
+    #                 state['prob_history'][:, i, :], 
+    #                 self._temperature, 
+    #                 self._top_k, 
+    #                 self._top_p
+    #             )
+    #         state['past_key_values'] = outputs.past_key_values
+    #         last_q = state['prob_history'][:, -1, :]
+    #     else:
+    #         cached_len = state['past_key_values'][0][0].shape[2]
+    #         last_input_id = input_ids[:, cached_len:]
+    #         outputs = model(
+    #             last_input_id, 
+    #             past_key_values=state['past_key_values'], 
+    #             use_cache=True
+    #         )
+    #         not_cached_q = outputs.logits[:, :, :self.vocab_size]
+    #         for i in range(not_cached_q.shape[-2]):
+    #             not_cached_q[:, i, :] = norm_logits(
+    #                 not_cached_q[:, i, :], 
+    #                 self._temperature, 
+    #                 self._top_k, 
+    #                 self._top_p
+    #             )
+    #         state['prob_history'] = torch.cat(
+    #             [state['prob_history'], not_cached_q], 
+    #             dim=1
+    #         ) if state['prob_history'] is not None else not_cached_q
+    #         last_q = not_cached_q[:, -1, :]
+    #         state['past_key_values'] = outputs.past_key_values
+        
+    #     return last_q
+
+    # @torch.no_grad()
+    # def rollback(self, end_pos: int):   # Deep seek 
+    #     """Rollback all models' states to a previous position."""
+    #     for state in self._model_states:
+    #         if state['past_key_values'] is not None:
+    #             # Crop KV cache
+    #             state['past_key_values'] = [
+    #                 (k[:, :, :end_pos, :], v[:, :, :end_pos, :]) 
+    #                 for k, v in state['past_key_values']
+    #             ]
+    #         if state['prob_history'] is not None:
+    #             state['prob_history'] = state['prob_history'][:, :end_pos, :]
+    #     # Also update aggregated prob_history
+    #     if self._prob_history is not None:
+    #         self._prob_history = self._prob_history[:, :end_pos, :]
