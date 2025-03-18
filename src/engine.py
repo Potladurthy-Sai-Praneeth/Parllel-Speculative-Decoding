@@ -212,6 +212,7 @@ class Decoding(ABC):
         # parallel speculative decoding  
         if self.accelerator.is_main_process:
             for idx ,m in enumerate(self.all_draft_models):
+                print(f'Loading draft model {idx}')
                 self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
                 self.kv_cache_models[idx].vocab_size = self.vocab_size
             device = self.all_draft_models[-1].device
@@ -242,7 +243,7 @@ class Decoding(ABC):
             #     prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
             #     prob = prob.to("cuda:1")
             #     self.target_forward_times += 1
-        
+            print(f'kv ache models are {self.kv_cache_models}')
             for idx,kv_model in self.kv_cache_models.items():
                 auxilairy_prefix = prefix.clone()
                 print(f'Draft model {idx} is generating the probabilities')
@@ -334,7 +335,7 @@ class Decoding(ABC):
                 cur_mode = True
 
             prefix = temp_prefix.clone()
-            print(f'After one round of comparison we have prefix shape is {prefix.shape}')
+            # print(f'After one round of comparison we have prefix shape is {prefix.shape}')
 
         return prefix
 
