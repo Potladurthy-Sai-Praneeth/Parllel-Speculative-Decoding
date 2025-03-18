@@ -215,7 +215,7 @@ class Decoding(ABC):
             print(f'Loading draft model {idx}')
             self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
             self.kv_cache_models[idx].vocab_size = self.vocab_size
-        device = self.all_draft_models[-1].device
+            device = self.all_draft_models[idx].device
         if not self.accelerator.is_main_process:
             print(f'Loading target model')
             model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
