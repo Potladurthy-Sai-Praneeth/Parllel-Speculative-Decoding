@@ -347,18 +347,17 @@ class KVCacheModel:
         for i in range(gamma):
             best_prob = -float('inf')
             best_slice = None
+            best_model_idx = 0
             
             for model_idx in range(len(self._models)):
                 pos = prefix_length + i
-                if all_probs[model_idx] is None:
-                    continue  # Skip models with no probabilities
-                if pos >= all_probs[model_idx].shape[1]:
-                    continue  # Avoid out-of-bounds access
+                if all_probs[model_idx] is None or pos >= all_probs[model_idx].shape[1]:
+                    continue
                 prob_slice = all_probs[model_idx][:, pos:pos+1, :]  # (batch, 1, vocab)
                 
                 if prob_slice.numel() == 0:
-                    continue  # Skip empty slices
-                current_max = prob_slice.max(dim=-1)[0].max().item()  # Max over vocab and batch
+                    continue
+                current_max = prob_slice.max(dim=-1)[0].max().item()
                 if current_max > best_prob:
                     best_prob = current_max
                     best_slice = prob_slice
@@ -368,16 +367,22 @@ class KVCacheModel:
                 merged_probs.append(best_slice)
                 token = all_sequences[best_model_idx][:, pos:pos+1]
                 merged_sequence = torch.cat((merged_sequence, token), dim=1)
+            else:
+                # Fallback: use first model's prediction if all models fail
+                token = all_sequences[0][:, prefix_length + i:prefix_length + i + 1]
+                merged_sequence = torch.cat((merged_sequence, token), dim=1)
+                merged_probs.append(all_probs[0][:, prefix_length + i:prefix_length + i + 1, :])
 
         # Aggregate prob_history
         if merged_probs:
             merged_probs = torch.cat(merged_probs, dim=1)
-            prefix_probs = all_probs[0][:, :prefix_length, :]  # Use first model's prefix
+            prefix_probs = all_probs[0][:, :prefix_length, :]
             self._prob_history = torch.cat([prefix_probs, merged_probs], dim=1)
         else:
-            self._prob_history = all_probs[0][:, :prefix_length, :] if all_probs[0] is not None else None
+            self._prob_history = all_probs[0][:, :prefix_length, :]
 
         return merged_sequence
+
 
     @torch.no_grad()
     def generate(self, input: torch.Tensor, gamma: int) -> torch.Tensor:
