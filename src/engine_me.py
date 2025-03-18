@@ -80,8 +80,8 @@ class Decoding(ABC):
         max_tokens = prefix.shape[1] + self.args.max_tokens
         
         # Synchronize prefix across processes at the start
-        prefix = self.accelerator.gather(prefix.to(device))
-        print(prefix.shape)
+        # prefix = self.accelerator.gather(prefix.to(device))
+        # print(prefix.shape)
         # prefix = gathered_prefix[0].clone()  # Use first copy since all should be identical
         
         while prefix.shape[1] < max_tokens:
@@ -116,15 +116,16 @@ class Decoding(ABC):
             
             # Synchronize across processes before gathering
             self.accelerator.wait_for_everyone()
+            gathered_probs = self.accelerator.gather([draft_probs,target_prob])
             
             # Each process creates a placeholder tensor for the other process
-            if self.accelerator.is_main_process:
-                # Main process has draft_probs but needs a placeholder for target_prob
-                placeholder_target = torch.zeros_like(draft_probs[0:1])  # Create placeholder with same shape as one draft
-                gathered_probs = self.accelerator.gather_object([draft_probs, placeholder_target])
-            else:
-                # Non-main process has target_prob but needs placeholder for draft_probs
-                gathered_probs = self.accelerator.gather_object([target_prob])
+            # if self.accelerator.is_main_process:
+            #     # Main process has draft_probs but needs a placeholder for target_prob
+            #     placeholder_target = torch.zeros_like(draft_probs[0:1])  # Create placeholder with same shape as one draft
+            #     gathered_probs = self.accelerator.gather_object([draft_probs, placeholder_target])
+            # else:
+            #     # Non-main process has target_prob but needs placeholder for draft_probs
+            #     gathered_probs = self.accelerator.gather_object([target_prob])
             
             # Both processes now have the complete list of tensors
             # We know the main process provided draft probs first, followed by placeholder
