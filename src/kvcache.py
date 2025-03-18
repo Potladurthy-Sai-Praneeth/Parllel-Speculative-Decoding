@@ -27,8 +27,6 @@ class KVCacheModel():
                 
             last_input_id = input_ids[:, cached_len:]
 
-            print(last_input_id)
-
             if last_input_id.numel() == 0:
                 return self.last_q
 
