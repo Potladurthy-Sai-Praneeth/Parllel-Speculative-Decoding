@@ -217,6 +217,7 @@ class Decoding(ABC):
                 self.kv_cache_models[idx].vocab_size = self.vocab_size
             device = self.all_draft_models[-1].device
         else:
+            print(f'Loading target model')
             model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
             model.vocab_size = self.vocab_size
             device = self.target_model.device
@@ -243,7 +244,9 @@ class Decoding(ABC):
             #     prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
             #     prob = prob.to("cuda:1")
             #     self.target_forward_times += 1
-            print(f'kv ache models are {self.kv_cache_models}')
+            print(f'kv cache models are {self.kv_cache_models}')
+            if self.kv_cache_models == {}:
+                break
             for idx,kv_model in self.kv_cache_models.items():
                 auxilairy_prefix = prefix.clone()
                 print(f'Draft model {idx} is generating the probabilities')
