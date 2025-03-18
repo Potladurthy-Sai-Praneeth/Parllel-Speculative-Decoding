@@ -239,342 +239,141 @@ class Decoding(ABC):
     #     return prefix
         
     
-    # @torch.no_grad()
-    # def parallel_speculative_decoding(self, prefix):   # My code
-    #     # parallel speculative decoding  
-    #     if self.accelerator.is_main_process:
-    #         for idx ,m in enumerate(self.all_draft_models):
-    #             print(f'Loading draft model {idx}')
-    #             self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
-    #             self.kv_cache_models[idx].vocab_size = self.vocab_size
-    #             device = self.all_draft_models[idx].device
-    #     else:
-    #         print(f'Loading target model')
-    #         model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
-    #         model.vocab_size = self.vocab_size
-    #         device = self.target_model.device
-
-    #     max_tokens = prefix.shape[1] + self.args.max_tokens
-        
-    #     # this flag is used to determine the current verify mode.
-    #     cur_mode = True
-    #     num_acc_token = 0
-
-    #     while prefix.shape[1] < max_tokens:
-
-    #         prefix_len = prefix.shape[1]
-    #         input_ids = prefix.to(device)
-
-    #         temp_prefix = prefix.clone()
-           
-    #         temp_tokens = 0
-    #         num_accept_tokens= []
-
-    #         # if not self.accelerator.is_main_process:
-    #         #     print(f'Target model is generating the probabilities')
-    #         #     x = model.generate(input_ids, 1)
-    #         #     prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
-    #         #     prob = prob.to("cuda:1")
-    #         #     self.target_forward_times += 1
-    #         print(f'kv cache models are {self.kv_cache_models}')
-    #         if self.kv_cache_models == {}:
-    #             break
-    #         for idx,kv_model in self.kv_cache_models.items():
-    #             auxilairy_prefix = prefix.clone()
-    #             print(f'Draft model {idx} is generating the probabilities')
-    #             if self.accelerator.is_main_process:
-    #                 x = kv_model.generate(input_ids, self.args.gamma)
-    #                 prob = kv_model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
-    #                 prob[:, 0, 0] = -1
-    #                 prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
-    #                 self.draft_forward_times += self.args.gamma
-                
-    #             else:
-    #                 print(f'Target model is generating the probabilities')
-    #                 x = model.generate(input_ids, 1)
-    #                 prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
-    #                 prob = prob.to("cuda:1")
-    #                 self.target_forward_times += 1
-                
-    #             self.accelerator.wait_for_everyone()
-
-    #             # verification
-    #             all_prob = self.accelerator.gather(prob).to(device)
-
-    #             draft_ids = all_prob[0, [0], 1:self.args.gamma*2].int()
-    #             draft_prob = all_prob[[0], 1:, :]
-    #             target_prob = all_prob[[1], 1:, :]
-
-    #             print(f'All draft probs shape is {all_prob.shape}')
-    #             print(f'Draft probs shape is {draft_prob.shape}')
-    #             print(f'Target probs shape is {target_prob.shape}')
-
-    #             print(f'Proceeding for verification')
-
-    #             if cur_mode:
-    #                 first_token = draft_ids[:, -self.args.gamma]
-    #                 torch.manual_seed(self.seed + prefix_len)
-
-    #                 r = torch.rand(1, device=device)
-    #                 if  r > target_prob[:, -1, first_token] / draft_prob[:, -1, first_token]:
-    #                     # reject the first token
-    #                     t = sample(max_fn(target_prob[:, -1, :] - draft_prob[:, -1, :]))
-    #                     auxilairy_prefix = torch.cat((input_ids, t), dim=1)
-                        
-    #                     # record the number of accepted tokens
-    #                     num_accept_tokens.append(temp_tokens)
-    #                     temp_tokens = 0
-                        
-    #                     if self.accelerator.is_main_process:
-    #                         # rollback the small model kv cache
-    #                         kv_model.rollback(prefix_len)
-    #                 else:
-    #                     # accept the first token, change the mode
-    #                     cur_mode = False
-    #                     auxilairy_prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
-    #                     temp_tokens += 1
-
-    #             else:
-    #                 n = self.args.gamma
-    #                 for i in range(self.args.gamma):
-    #                     token = draft_ids[:, i]
-    #                     torch.manual_seed(self.seed + prefix_len - self.args.gamma + i)
-    #                     r = torch.rand(1, device=device)
-    #                     if r > target_prob[:, i, token] / draft_prob[:, i, token]:
-    #                         n = i
-    #                         break
-    #                 if n == self.args.gamma:
-    #                     # accept all guess tokens
-    #                     auxilairy_prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
-    #                     temp_tokens += self.args.gamma
-    #                 else:
-    #                     # reject someone, change the mode
-    #                     assert n < self.args.gamma
-    #                     cur_mode = True
-    #                     t = sample(max_fn(target_prob[:, n, :] - draft_prob[:, n, :]))
-                        
-    #                     auxilairy_prefix = torch.cat((input_ids[:, :prefix_len-self.args.gamma + n + 1], t), dim=1)
-    #                     num_accept_tokens.append(temp_tokens + n)
-    #                     temp_tokens = 0
-    #                     # rollback both the large model and the small model kv cache
-    #                     model.rollback(prefix_len - self.args.gamma +n+1)
-    #                     kv_model.rollback(prefix_len - self.args.gamma +n+1)
-                
-    #             if len(num_accept_tokens)>=len(self.num_acc_tokens):
-    #                 self.num_acc_tokens = num_accept_tokens
-    #                 temp_prefix = auxilairy_prefix
-    #                 num_acc_token = temp_tokens
-                       
-    #             temp_tokens = 0
-    #             num_accept_tokens = []
-    #             cur_mode = True
-
-    #         prefix = temp_prefix.clone()
-    #         # print(f'After one round of comparison we have prefix shape is {prefix.shape}')
-
-    #     return prefix
-
-
     @torch.no_grad()
-    def parallel_speculative_decoding(self, prefix):
-        # Initialize models based on process role - move this to load_model to avoid reinitializing each time
+    def parallel_speculative_decoding(self, prefix):   # My code
+        # parallel speculative decoding  
         if self.accelerator.is_main_process:
-            # Check if models are already loaded
-            if not self.kv_cache_models:
-                self.color_print("WARNING: KV cache models not initialized in main process!", 1)
-                # As a fallback, initialize them here
-                for idx, m in enumerate(self.all_draft_models):
-                    self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
-                    self.kv_cache_models[idx].vocab_size = self.vocab_size
-            
-            device = next(iter(self.kv_cache_models.values()))._model.device if self.kv_cache_models else torch.device('cuda:0')
-            self.color_print(f"Main process using device: {device}", 2)
+            for idx ,m in enumerate(self.all_draft_models):
+                print(f'Loading draft model {idx}')
+                self.kv_cache_models[idx] = KVCacheModel(m, self.args.temp, self.args.top_k, self.args.top_p)
+                self.kv_cache_models[idx].vocab_size = self.vocab_size
+                device = self.all_draft_models[idx].device
         else:
-            # Initialize target model
+            print(f'Loading target model')
             model = KVCacheModel(self.target_model, self.args.temp, self.args.top_k, self.args.top_p)
             model.vocab_size = self.vocab_size
-            device = model._model.device
-            self.color_print(f"Secondary process using device: {device}", 2)
+            device = self.target_model.device
 
-        # Define maximum generation length
         max_tokens = prefix.shape[1] + self.args.max_tokens
         
-        # Verification mode flag
+        # this flag is used to determine the current verify mode.
         cur_mode = True
         num_acc_token = 0
 
-        # Main generation loop
         while prefix.shape[1] < max_tokens:
+
             prefix_len = prefix.shape[1]
             input_ids = prefix.to(device)
+
             temp_prefix = prefix.clone()
+           
             temp_tokens = 0
-            num_accept_tokens = []
+            num_accept_tokens= []
 
-            # Process each draft model or target model
-            if self.accelerator.is_main_process:
-                # Skip if no draft models are available
-                if not self.kv_cache_models:
-                    self.color_print("ERROR: No draft models available. Exiting.", 1)
-                    break
-                    
-                # Generate with the first draft model
-                for idx, kv_model in self.kv_cache_models.items():
-                    self.color_print(f"Generating with draft model {idx}", 3)
+            # if not self.accelerator.is_main_process:
+            #     print(f'Target model is generating the probabilities')
+            #     x = model.generate(input_ids, 1)
+            #     prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
+            #     prob = prob.to("cuda:1")
+            #     self.target_forward_times += 1
+            print(f'kv cache models are {self.kv_cache_models}')
+            if self.kv_cache_models == {}:
+                break
+            for idx,kv_model in self.kv_cache_models.items():
+                auxilairy_prefix = prefix.clone()
+                print(f'Draft model {idx} is generating the probabilities')
+                if self.accelerator.is_main_process:
                     x = kv_model.generate(input_ids, self.args.gamma)
-                    
-                    # Ensure proper shape for prob history
-                    if prefix_len - self.args.gamma - 1 < 0:
-                        start_idx = 0
-                    else:
-                        start_idx = prefix_len - self.args.gamma - 1
-                        
-                    prob = kv_model._prob_history[:, start_idx:prefix_len, :self.vocab_size].to(torch.float32)
-                    
-                    # Special handling for first token
-                    prob_padding = torch.zeros((1, max(0, self.args.gamma + 1 - prob.size(1)), self.vocab_size), 
-                                            device=prob.device, dtype=prob.dtype)
-                    prob = torch.cat([prob_padding, prob], dim=1)
-                    
-                    # Store draft tokens in a known location for verification
+                    prob = kv_model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
                     prob[:, 0, 0] = -1
-                    prob[:, 0, 1:self.args.gamma*2] = x[:, -self.args.gamma:] if x.size(1) >= self.args.gamma else x
-                    
+                    prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
                     self.draft_forward_times += self.args.gamma
-                    break  # Only use the first draft model for now
-            else:
-                self.color_print("Generating with target model", 3)
-                x = model.generate(input_ids, 1)
                 
-                # Ensure proper shape for prob history
-                if prefix_len - self.args.gamma - 1 < 0:
-                    start_idx = 0
                 else:
-                    start_idx = prefix_len - self.args.gamma - 1
-                    
-                prob = model._prob_history[:, start_idx:prefix_len, :self.vocab_size].to(torch.float32)
+                    print(f'Target model is generating the probabilities')
+                    x = model.generate(input_ids, 1)
+                    prob = model._prob_history[:, prefix_len-self.args.gamma-1:prefix_len, :self.vocab_size].to(torch.float32)
+                    prob = prob.to("cuda:1")
+                    self.target_forward_times += 1
                 
-                # Special handling for first token
-                prob_padding = torch.zeros((1, max(0, self.args.gamma + 1 - prob.size(1)), self.vocab_size), 
-                                        device=prob.device, dtype=prob.dtype)
-                prob = torch.cat([prob_padding, prob], dim=1)
-                
-                self.target_forward_times += 1
+                self.accelerator.wait_for_everyone()
 
-            # Synchronize between processes
-            self.accelerator.wait_for_everyone()
-            
-            # Gather and verify probabilities
-            try:
+                # verification
                 all_prob = self.accelerator.gather(prob).to(device)
-                
-                # Extract draft tokens and probabilities
+
                 draft_ids = all_prob[0, [0], 1:self.args.gamma*2].int()
                 draft_prob = all_prob[[0], 1:, :]
                 target_prob = all_prob[[1], 1:, :]
-                
-                self.color_print(f"Verification shapes - All: {all_prob.shape}, Draft: {draft_prob.shape}, Target: {target_prob.shape}", 4)
-                
-                # Process the verification for each draft model
-                for idx in range(1):  # Currently only using the first draft
-                    auxilairy_prefix = prefix.clone()
-                    kv_model = next(iter(self.kv_cache_models.values())) if self.accelerator.is_main_process else None
-                    
-                    # Single-token verification mode
-                    if cur_mode:
-                        # Handle token index boundary checks
-                        gamma_idx = min(self.args.gamma, draft_ids.size(1)) - 1
-                        if gamma_idx < 0:
-                            self.color_print("Warning: gamma_idx < 0, using default token", 1)
-                            first_token = torch.tensor([0], device=device)
-                        else:
-                            first_token = draft_ids[:, gamma_idx]
+
+                print(f'All draft probs shape is {all_prob.shape}')
+                print(f'Draft probs shape is {draft_prob.shape}')
+                print(f'Target probs shape is {target_prob.shape}')
+
+                print(f'Proceeding for verification')
+
+                if cur_mode:
+                    first_token = draft_ids[:, -self.args.gamma]
+                    torch.manual_seed(self.seed + prefix_len)
+
+                    r = torch.rand(1, device=device)
+                    if  r > target_prob[:, -1, first_token] / draft_prob[:, -1, first_token]:
+                        # reject the first token
+                        t = sample(max_fn(target_prob[:, -1, :] - draft_prob[:, -1, :]))
+                        auxilairy_prefix = torch.cat((input_ids, t), dim=1)
                         
-                        torch.manual_seed(self.seed + prefix_len)
-                        r = torch.rand(1, device=device)
+                        # record the number of accepted tokens
+                        num_accept_tokens.append(temp_tokens)
+                        temp_tokens = 0
                         
-                        # Avoid division by zero
-                        ratio = 0
-                        if draft_prob[:, -1, first_token].item() > 0:
-                            ratio = target_prob[:, -1, first_token].item() / draft_prob[:, -1, first_token].item()
-                        
-                        if r > ratio:
-                            # Reject the token
-                            diff = target_prob[:, -1, :] - draft_prob[:, -1, :]
-                            t = sample(max_fn(diff))
-                            auxilairy_prefix = torch.cat((input_ids, t), dim=1)
-                            
-                            num_accept_tokens.append(temp_tokens)
-                            temp_tokens = 0
-                            
-                            # Rollback the KV cache in the main process
-                            if self.accelerator.is_main_process and kv_model:
-                                kv_model.rollback(prefix_len)
-                        else:
-                            # Accept the token
-                            cur_mode = False
-                            auxilairy_prefix = torch.cat((input_ids, draft_ids[:, [-1]]), dim=1)
-                            temp_tokens += 1
+                        if self.accelerator.is_main_process:
+                            # rollback the small model kv cache
+                            kv_model.rollback(prefix_len)
                     else:
-                        # Multi-token verification mode
-                        n = self.args.gamma
-                        for i in range(min(self.args.gamma, draft_ids.size(1))):
-                            token = draft_ids[:, i]
-                            torch.manual_seed(self.seed + prefix_len - self.args.gamma + i)
-                            r = torch.rand(1, device=device)
-                            
-                            # Avoid division by zero
-                            ratio = 0
-                            if draft_prob[:, i, token].item() > 0:
-                                ratio = target_prob[:, i, token].item() / draft_prob[:, i, token].item()
-                            
-                            if r > ratio:
-                                n = i
-                                break
+                        # accept the first token, change the mode
+                        cur_mode = False
+                        auxilairy_prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
+                        temp_tokens += 1
+
+                else:
+                    n = self.args.gamma
+                    for i in range(self.args.gamma):
+                        token = draft_ids[:, i]
+                        torch.manual_seed(self.seed + prefix_len - self.args.gamma + i)
+                        r = torch.rand(1, device=device)
+                        if r > target_prob[:, i, token] / draft_prob[:, i, token]:
+                            n = i
+                            break
+                    if n == self.args.gamma:
+                        # accept all guess tokens
+                        auxilairy_prefix = torch.cat((input_ids, draft_ids[:, -self.args.gamma:]), dim=1)
+                        temp_tokens += self.args.gamma
+                    else:
+                        # reject someone, change the mode
+                        assert n < self.args.gamma
+                        cur_mode = True
+                        t = sample(max_fn(target_prob[:, n, :] - draft_prob[:, n, :]))
                         
-                        if n == self.args.gamma:
-                            # Accept all tokens
-                            end_idx = min(self.args.gamma, draft_ids.size(1))
-                            auxilairy_prefix = torch.cat((input_ids, draft_ids[:, :end_idx]), dim=1)
-                            temp_tokens += end_idx
-                        else:
-                            # Reject at position n
-                            cur_mode = True
-                            diff = target_prob[:, n, :] - draft_prob[:, n, :]
-                            t = sample(max_fn(diff))
-                            
-                            new_prefix_len = prefix_len - self.args.gamma + n + 1
-                            new_prefix_len = max(1, min(new_prefix_len, input_ids.size(1)))
-                            
-                            auxilairy_prefix = torch.cat((input_ids[:, :new_prefix_len], t), dim=1)
-                            num_accept_tokens.append(temp_tokens + n)
-                            temp_tokens = 0
-                            
-                            # Rollback KV caches
-                            if not self.accelerator.is_main_process:
-                                model.rollback(new_prefix_len)
-                            elif kv_model:
-                                kv_model.rollback(new_prefix_len)
-                    
-                    # Update best prefix
-                    if len(num_accept_tokens) >= len(self.num_acc_tokens):
-                        self.num_acc_tokens = num_accept_tokens
-                        temp_prefix = auxilairy_prefix
-                        num_acc_token = temp_tokens
-            
-            except Exception as e:
-                self.color_print(f"Error during verification: {str(e)}", 1)
-                break
+                        auxilairy_prefix = torch.cat((input_ids[:, :prefix_len-self.args.gamma + n + 1], t), dim=1)
+                        num_accept_tokens.append(temp_tokens + n)
+                        temp_tokens = 0
+                        # rollback both the large model and the small model kv cache
+                        model.rollback(prefix_len - self.args.gamma +n+1)
+                        kv_model.rollback(prefix_len - self.args.gamma +n+1)
                 
-            # Reset for next iteration
+                if len(num_accept_tokens)>=len(self.num_acc_tokens):
+                    self.num_acc_tokens = num_accept_tokens
+                    temp_prefix = auxilairy_prefix
+                    num_acc_token = temp_tokens
+                       
+                temp_tokens = 0
+                num_accept_tokens = []
+                cur_mode = True
+
             prefix = temp_prefix.clone()
-            temp_tokens = 0
-            num_accept_tokens = []
-            cur_mode = True
-            
-            self.color_print(f"Current prefix length: {prefix.shape[1]}/{max_tokens}", 2)
+            # print(f'After one round of comparison we have prefix shape is {prefix.shape}')
 
         return prefix
+
     
     @abstractmethod
     def eval(self):
