@@ -84,6 +84,8 @@ class Decoding(ABC):
         cur_mode = True
         num_acc_token = 0
 
+        print(f'Going inside While loop')
+
         while prefix.shape[1] < max_tokens:
             prefix_len = prefix.shape[1]
             input_ids = prefix.to(device)
@@ -98,6 +100,7 @@ class Decoding(ABC):
                     # prob[:, 0, 1:self.args.gamma*2] = x[:, prefix_len-self.args.gamma+1:prefix_len+self.args.gamma]
                     draft_probs.append(prob)
                     self.draft_forward_times += self.args.gamma
+                    print(f'Finihsed generation of draft:{idx} with shape {prob.shape}')
                 # Stack all draft probs into a batch [num_drafts, batch, gamma, vocab]
                 draft_probs = torch.stack(draft_probs, dim=0)
             else:
@@ -106,6 +109,7 @@ class Decoding(ABC):
                 prob = model._prob_history[:, prefix_len - self.args.gamma - 1:prefix_len, :self.vocab_size].to(torch.float32)
                 prob = prob.squeeze(0).to("cuda:1")
                 self.target_forward_times += 1
+                print(f'Finihsed generation of target with shape {prob.shape}')
 
             # Gather all probabilities across processes
             self.accelerator.wait_for_everyone()
@@ -117,10 +121,6 @@ class Decoding(ABC):
                 all_draft_probs = gathered_probs[:num_drafts]  # [num_drafts, 1, gamma, vocab]
                 target_probs = gathered_probs[num_drafts:]     # [1, 1, gamma, vocab]
 
-            else:
-                # Non-main process does not participate in verification
-                continue
-
             # Track the best candidate across all drafts
             temp_prefix = prefix.clone()
            
@@ -128,6 +128,7 @@ class Decoding(ABC):
             num_accept_tokens= []
 
             # Verify each draft against the target
+            print(f'Going inside for loop for comparison')
             for draft_idx in range(all_draft_probs.shape[0]):
                 auxilairy_prefix = prefix.clone()
                 draft_prob_single = all_draft_probs[draft_idx]
@@ -198,7 +199,7 @@ class Decoding(ABC):
                 cur_mode = True
 
             prefix = temp_prefix.clone()
-            print(f'Prefix shape is {prefix.shape}')
+            print(f'After one round of comparison we have prefix shape is {prefix.shape}')
 
         return prefix
         
