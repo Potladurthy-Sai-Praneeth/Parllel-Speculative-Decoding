@@ -245,7 +245,7 @@ class EvalGSM8K(Decoding):
                     acc += 1
                 out_f.write(json.dumps({"question": datum["question"], "time": end_time-start_time, "new_tokens": generate_ids.shape[1] - input_ids.shape[1], "ground_truth": datum["ground_truth"], "answer": answer}, ensure_ascii=False) + "\n")
             out_f.flush()
-        self.color_print(f"Accuracy: {acc / len(self.data):.4f} in the {_+1}-th iterations.", 2)
+        # self.color_print(f"Accuracy: {acc / len(self.data):.4f} in the {+1}-th iterations.", 2)
         
         out_f.close()
         
